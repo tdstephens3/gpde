@@ -16,9 +16,9 @@ n=128;
 [ n_node,n_ele,node,ele] = triangulation_square( n );
 
 % Initialization
-A = sparse([],[],[],n_node,n_node,7*n_node);
+A    = sparse([],[],[],n_node,n_node,7*n_node);
 MASS = sparse([],[],[],n_node,n_node,7*n_node);
-rhs = zeros(n_node,1);
+rhs  = zeros(n_node,1);
 
 % Since we are going to compute the integral on the reference element,
 % we need provide the quadrature rule for the reference triangle.
