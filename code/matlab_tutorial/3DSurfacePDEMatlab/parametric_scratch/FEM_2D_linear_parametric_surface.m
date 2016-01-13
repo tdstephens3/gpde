@@ -51,8 +51,8 @@ for cell = 1:n_ele
                            hat_phi_at_q, hat_phix_at_q, hat_phiy_at_q,...
                            q_yhat,nq,q_weights,...
                            1,2,1); % alpha, beta, rhs_flag
-    
-    % Copy local to global
+     
+	 % Copy local to global
     A(cell_ind,cell_ind) ...
         = A(cell_ind,cell_ind) + local_stiff;   %[3x3]
     rhs(cell_ind) = rhs(cell_ind) + local_rhs;  %[3x1]

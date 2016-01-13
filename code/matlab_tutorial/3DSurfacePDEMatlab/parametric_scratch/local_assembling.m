@@ -29,6 +29,14 @@ function [ local_stiff,local_rhs ] = local_assembling( v,hat_phi,...
                     
     
     %local stiff and rhs
+	 x       = chi_func_eval(v);	
+	 grad_X  = [x(:,2) - x(:,1), x(:,3) - x(:,1)]*inv_B;
+	 G_Gamma = grad_X'*grad_X;
+	 
+	 Q_Gamma     = sqrt(abs(det(G_Gamma)));
+	 inv_G_Gamma = 1/(q_Gamma)*[ G_Gamma(2,2), -G_Gamma(1,2);
+	                            -G_Gamma(2,1),  G_Gamma(1,1)];
+	 
     for q_index = 1:nq
 
         grad_phi_at_q_point=inv_B'*[grad_hat_phi_x1(q_index,:); grad_hat_phi_x2(q_index,:)]; % [2x3] 3 basis func gradients
@@ -36,11 +44,8 @@ function [ local_stiff,local_rhs ] = local_assembling( v,hat_phi,...
         % exploiting matlab's speed with vector operations, we avoid doing
         % the for loops to construct the local matrix and rhs.  Below in
         % the commented section is the same code using for loops.
-	
-	inv_G_Gamm = ;
-	Q_Gamma    = ;
         
-	grad_phi_ij_matrix = grad_phi_at_q_point'*inv_G_Gamma*grad_phi_at_q_point;  % = [grad phi_i .inv_G_Gamma. grad_phi_j ]_{ij}
+	     grad_phi_ij_matrix = grad_phi_at_q_point'*inv_G_Gamma*grad_phi_at_q_point;  % = [grad phi_i .inv_G_Gamma. grad_phi_j ]_{ij}
         phi_ij_matrix = hat_phi(q_index,:)'*hat_phi(q_index,:);         % = [phi_i phi_j]_{ij}
        
 		 
@@ -49,12 +54,15 @@ function [ local_stiff,local_rhs ] = local_assembling( v,hat_phi,...
                                 * q_weights(q_index)...
                                 * Q_Gamma...
 				                    * det_B;   
-                            
+                           
         if(rhs_flag)
+		      grad_chi_at_q_point = grad_chi_at_q(q_points(q_index,:));
+		      G = grad_chi_at_q_point'*grad_chi_at_q_point;
+		      q = sqrt(det(G));
             local_rhs=local_rhs + rhs_vals(q_index)...    % f(q_point)
                                   *hat_phi(q_index,:)'... % basis on reference element at q_point [3x1]
                                   *q_weights(q_index)...  % quadrature weight
-                                  *det_B;                 % reference area-element transform
+                                  *q*det_B;                 % reference area-element transform
         end
         
         

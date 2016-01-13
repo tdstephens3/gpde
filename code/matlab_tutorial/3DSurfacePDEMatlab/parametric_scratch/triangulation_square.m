@@ -1,7 +1,7 @@
 function [  n_node,n_ele,node,ele] = triangulation_square( n )
-h=1/n;
-xx=0:h:1;
-yy=0:h:1;
+
+xx = linspace(-pi,pi,n+1);
+yy = linspace(-pi,pi,n+1);
 X=zeros((n+1)*(n+1),2);
 [YY,XX]=meshgrid(yy,xx);
 X(:,1)=reshape(XX,(n+1)^2,1);
