@@ -1,6 +1,4 @@
-function [ val ] = exact( x )
-% Exact solution
-val = cos(pi*x(:,1)).*cos(2*pi*x(:,2));
-
+function res = exact (chi)
+% Exact solution.
+res=sin(3*chi(:,2)).*cos(3*chi(:,1)+chi(:,2));
 end
-

@@ -1,11 +1,11 @@
-% local_assembly.m   Jan 13, 2016
-% modified from local_assembly.m from another directory...
-
 function [ local_stiff,local_rhs ] = local_assembling( v,hat_phi,...
                                                        grad_hat_phi_x1,grad_hat_phi_x2,...
                                                        q_yhat,nq,q_weights,...
                                                        alpha,beta,rhs_flag)
 
+% local_assembly.m   Jan 13, 2016
+% modified from local_assembly.m from another directory...
+%
 % [ local_stiff,local_rhs ] = local_assembling( v,hat_phi,grad_hat_phi_x1,grad_hat_phi_x2, q_yhat,nq,q_weights, alpha,beta,rhs_flag)
 %
 % construct local contributions from cell (defiend by vertices v to 
@@ -33,12 +33,13 @@ function [ local_stiff,local_rhs ] = local_assembling( v,hat_phi,...
     
     %local stiff and rhs
 	 x       = chi_func_eval(v);	
-	 grad_X  = [x(:,2) - x(:,1), x(:,3) - x(:,1)]*inv_B;
+	 grad_X  = [x(2,:) - x(1,:); x(3,:) - x(1,:)]'*inv_B;
 	 G_Gamma = grad_X'*grad_X;
-	 
-	 Q_Gamma     = sqrt(abs(det(G_Gamma)));
-	 inv_G_Gamma = 1/(Q_Gamma)*[ G_Gamma(2,2), -G_Gamma(1,2);
-	                            -G_Gamma(2,1),  G_Gamma(1,1)];
+		
+	 q_Gamma     = det(G_Gamma); 
+	 Q_Gamma     = sqrt(abs(q_Gamma));
+	 inv_G_Gamma = 1/q_Gamma*[ G_Gamma(2,2), -G_Gamma(1,2);
+	                          -G_Gamma(2,1),  G_Gamma(1,1)];
 	 
     for q_index = 1:nq
 
@@ -61,7 +62,7 @@ function [ local_stiff,local_rhs ] = local_assembling( v,hat_phi,...
         if(rhs_flag)
 		      grad_chi_at_q_point = grad_chi_at_q(q_points(q_index,:));
 		      G = grad_chi_at_q_point'*grad_chi_at_q_point;
-		      q = sqrt(det(G));
+		      q = sqrt(abs(det(G)));
             local_rhs=local_rhs + rhs_vals(q_index)...    % f(q_point)
                                   *hat_phi(q_index,:)'... % basis on reference element at q_point [3x1]
                                   *q_weights(q_index)...  % quadrature weight
