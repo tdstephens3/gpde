@@ -10,6 +10,9 @@ function [grad_chi] = grad_chi_at_q(Y)
 	
 	theta = Y(1);
 	phi   = Y(2);
-
+   
+   grad_chi = [-r*sin(theta)*cos(phi), -R*sin(phi)-r*sin(phi)*cos(theta);...
+               -r*sin(theta)*sin(phi),  R*cos(phi) + r*cos(theta)*cos(phi);...
+                r*cos(theta),           0];
 			
 end
