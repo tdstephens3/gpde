@@ -6,15 +6,12 @@ function plot_from_node_ele(node,ele,global_ind,global_ind_inverse,func)
 
 n_ele = size(ele,1);
 
-fig = figure(100);
-set(fig,'Position', [100, 100, 1700, 940])
 
 %% % Visualization
 %% % Using the function 'patch' to visualize each triangle.
 %% % Colors are decided by the value on the vertices.
 %% 
 Xnodes = chi_func_eval(node(global_ind_inverse,:));
-
 % change the element connectivity list to use the unique nodes of
 % global_ind instead of the repeated ones of ele and save as sele.
 sele=global_ind(ele);

@@ -1,13 +1,9 @@
 % Standard finite element method on the unique square
 % We approximate the following equation
-% 2u-\Delta u = f in \Omega=[0,1]^2
-%       du/dn = 0 on the boundary of \Omega
 %
 % where \Delta is the Laplace operator and du/dn is 
 % the normal derivative on the boundary.
 %
-% Wenyu Lei
-% Jan 7, 2016
 addpath('../src');
 clear all; close all; clc;
 format long;
@@ -42,6 +38,7 @@ init_cond = initial_value(pm_node(global_ind_inverse,:));
 plot_from_node_ele(pm_node,ele,global_ind,global_ind_inverse,init_cond);
 
 del_t = h^2/2;
+%del_t = h/2;
 tend = 100;
 
 % shape value and shape gradient (x and y components) each are [nqx1]
@@ -93,23 +90,39 @@ for cell = 1:n_ele
 end
 
 N = 100;
-
 u_old = init_cond;
 u_new = zeros(size(u_old));
-%figure(100)
-%plot_from_node_ele(pm_node,ele,global_ind,global_ind_inverse,init_cond);
-%title('initial cond')
+figure(100)
+plot_from_node_ele(pm_node,ele,global_ind,global_ind_inverse,init_cond);
+title('initial cond')
+drawnow
 
-figure(200)
-A_inv = (MASS + del_t*A)\eye(size(A));
-A_inv_M = A_inv*MASS;
+eps = 0.0001;
+lmda = 1/eps^2;
+P_fixed = MASS + del_t*(A + lmda*MASS);
+
 for t = 0:del_t:N*del_t
    
    t=t
-   u_new = A_inv_M*u_old;
   
+   %N_u2 = spdiags(diag(MASS).*u_old.^2,0, n_node,n_node);
+   %N_u2 = MASS.*(u_old.*u_old);
+
+   P = P_fixed - del_t*lmda*N_u2;
+   u_new = P\(MASS*u_old);
+
+
+   fig = figure(200);
+   set(fig,'Position', [100, 100, 1700, 940])
    plot_from_node_ele(pm_node,ele,global_ind,global_ind_inverse,u_new);
    title(sprintf('solution at time %0.4f',t))
+   drawnow
+   
+   fig2 = figure(300);
+   u_max = max(abs(u_new))
+   plot(t,u_max,'gx')
+   hold on
+   axis([0 0.5*N*del_t -2 2])
    drawnow
    
    u_old = u_new;
