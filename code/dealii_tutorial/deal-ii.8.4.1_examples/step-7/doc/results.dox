@@ -1,0 +1,218 @@
+<h1>Results</h1>
+
+
+The program generates two kinds of output. The first are the output
+files <code>solution-adaptive-q1.vtk</code>,
+<code>solution-global-q1.vtk</code>, and
+<code>solution-global-q2.vtk</code>. We show the latter in a 3d view
+here:
+
+
+<img src="http://www.dealii.org/images/steps/developer/step-7.solution.png" alt="">
+
+
+
+
+Secondly, the program writes tables not only to disk, but also to the
+screen while running. The output looks like the following (recall that
+columns labeled as "<code>H1</code>" actually show the $H^1$ <i>semi-</i>norm
+of the error, not the full $H^1$ norm):
+
+
+@code
+examples/\step-7> make run
+Solving with Q1 elements, adaptive refinement
+=============================================
+
+Cycle 0:
+   Number of active cells:       64
+   Number of degrees of freedom: 81
+Cycle 1:
+   Number of active cells:       124
+   Number of degrees of freedom: 157
+Cycle 2:
+   Number of active cells:       280
+   Number of degrees of freedom: 341
+Cycle 3:
+   Number of active cells:       577
+   Number of degrees of freedom: 690
+Cycle 4:
+   Number of active cells:       1099
+   Number of degrees of freedom: 1264
+Cycle 5:
+   Number of active cells:       2191
+   Number of degrees of freedom: 2452
+Cycle 6:
+   Number of active cells:       4165
+   Number of degrees of freedom: 4510
+Cycle 7:
+   Number of active cells:       7915
+   Number of degrees of freedom: 8440
+Cycle 8:
+   Number of active cells:       15196
+   Number of degrees of freedom: 15912
+
+cycle cells dofs     L2        H1      Linfty   
+    0    64    81 1.576e-01 1.418e+00 2.707e-01 
+    1   124   157 4.285e-02 1.285e+00 1.469e-01 
+    2   280   341 1.593e-02 7.909e-01 8.034e-02 
+    3   577   690 9.359e-03 5.096e-01 2.784e-02 
+    4  1099  1264 2.865e-03 3.038e-01 9.822e-03 
+    5  2191  2452 1.480e-03 2.106e-01 5.679e-03 
+    6  4165  4510 6.907e-04 1.462e-01 2.338e-03 
+    7  7915  8440 4.743e-04 1.055e-01 1.442e-03 
+    8 15196 15912 1.920e-04 7.468e-02 7.259e-04 
+
+Solving with Q1 elements, global refinement
+===========================================
+
+Cycle 0:
+   Number of active cells:       64
+   Number of degrees of freedom: 81
+Cycle 1:
+   Number of active cells:       256
+   Number of degrees of freedom: 289
+Cycle 2:
+   Number of active cells:       1024
+   Number of degrees of freedom: 1089
+Cycle 3:
+   Number of active cells:       4096
+   Number of degrees of freedom: 4225
+Cycle 4:
+   Number of active cells:       16384
+   Number of degrees of freedom: 16641
+
+cycle cells dofs     L2        H1      Linfty   
+    0    64    81 1.576e-01 1.418e+00 2.707e-01 
+    1   256   289 4.280e-02 1.285e+00 1.444e-01 
+    2  1024  1089 1.352e-02 7.556e-01 7.772e-02 
+    3  4096  4225 3.423e-03 3.822e-01 2.332e-02 
+    4 16384 16641 8.586e-04 1.917e-01 6.097e-03 
+
+n cells         H1                  L2          
+0    64 1.418e+00    -    - 1.576e-01    -    - 
+1   256 1.285e+00 1.10 0.14 4.280e-02 3.68 1.88 
+2  1024 7.556e-01 1.70 0.77 1.352e-02 3.17 1.66 
+3  4096 3.822e-01 1.98 0.98 3.423e-03 3.95 1.98 
+4 16384 1.917e-01 1.99 1.00 8.586e-04 3.99 2.00 
+
+Solving with Q2 elements, global refinement
+===========================================
+
+Cycle 0:
+   Number of active cells:       64
+   Number of degrees of freedom: 289
+Cycle 1:
+   Number of active cells:       256
+   Number of degrees of freedom: 1089
+Cycle 2:
+   Number of active cells:       1024
+   Number of degrees of freedom: 4225
+Cycle 3:
+   Number of active cells:       4096
+   Number of degrees of freedom: 16641
+Cycle 4:
+   Number of active cells:       16384
+   Number of degrees of freedom: 66049
+
+cycle cells dofs     L2        H1      Linfty   
+    0    64   289 1.606e-01 1.278e+00 3.029e-01 
+    1   256  1089 7.638e-03 5.248e-01 4.816e-02 
+    2  1024  4225 8.601e-04 1.086e-01 4.827e-03 
+    3  4096 16641 1.107e-04 2.756e-02 7.802e-04 
+    4 16384 66049 1.393e-05 6.915e-03 9.971e-05 
+
+n cells         H1                   L2          
+0    64 1.278e+00    -    - 1.606e-01     -    - 
+1   256 5.248e-01 2.43 1.28 7.638e-03 21.03 4.39 
+2  1024 1.086e-01 4.83 2.27 8.601e-04  8.88 3.15 
+3  4096 2.756e-02 3.94 1.98 1.107e-04  7.77 2.96 
+4 16384 6.915e-03 3.99 1.99 1.393e-05  7.94 2.99 
+
+Solving with Q2 elements, adaptive refinement
+===========================================
+
+Cycle 0:
+   Number of active cells:       64
+   Number of degrees of freedom: 289
+Cycle 1:
+   Number of active cells:       124
+   Number of degrees of freedom: 577
+Cycle 2:
+   Number of active cells:       289
+   Number of degrees of freedom: 1353
+Cycle 3:
+   Number of active cells:       547
+   Number of degrees of freedom: 2531
+Cycle 4:
+   Number of active cells:       1057
+   Number of degrees of freedom: 4919
+Cycle 5:
+   Number of active cells:       2059
+   Number of degrees of freedom: 9223
+Cycle 6:
+   Number of active cells:       3913
+   Number of degrees of freedom: 17887
+Cycle 7:
+   Number of active cells:       7441
+   Number of degrees of freedom: 33807
+Cycle 8:
+   Number of active cells:       14212
+   Number of degrees of freedom: 64731
+
+cycle cells dofs     L2        H1      Linfty   
+    0    64   289 1.606e-01 1.278e+00 3.029e-01 
+    1   124   577 7.891e-03 5.256e-01 4.852e-02 
+    2   289  1353 1.070e-03 1.155e-01 4.868e-03 
+    3   547  2531 5.962e-04 5.101e-02 1.876e-03 
+    4  1057  4919 1.977e-04 3.094e-02 7.923e-04 
+    5  2059  9223 7.738e-05 1.974e-02 7.270e-04 
+    6  3913 17887 2.925e-05 8.772e-03 1.463e-04 
+    7  7441 33807 1.024e-05 4.121e-03 8.567e-05 
+    8 14212 64731 3.761e-06 2.108e-03 2.167e-05 
+@endcode
+
+
+One can see the error reduction upon grid refinement, and for the
+cases where global refinement was performed, also the convergence
+rates can be seen. The linear and quadratic convergence rates of Q1
+and Q2 elements in the $H^1$ semi-norm can clearly be seen, as
+are the quadratic and cubic rates in the $L_2$ norm.
+
+
+
+
+Finally, the program also generated LaTeX versions of the tables (not shown
+here).
+
+
+<h3> Possible extensions </h3>
+
+<h4> Higher Order Elements </h4>
+
+Go ahead and run the program with higher order elements (Q3, Q4, ...). You
+will notice that assertions in several parts of the code will trigger (for
+example in the generation of the filename for the data output). After fixing
+these you will not see the correct convergence orders that the theory
+predicts. This is because the orders for the quadrature formulas are
+hard-coded in this program and this order is not enough for higher order
+discretizations. What is a good way to pick the orders dynamically?
+
+<h4> Convergence Comparison </h4>
+
+Is Q1 or Q2 better? What about adaptive versus global refinement? A (somewhat
+unfair but typical) metric to compare them, is to look at the error as a
+function of the number of unknowns.
+
+To see this, create a plot in log-log style with the number of unknowns on the
+x axis and the L2 error on the y axis. You can add reference lines for
+$h^2=N^{-1}$ and $h^3=N^{-3/2}$ and check that global and adaptive refinement
+follow those. 
+
+Note that changing the half width of the peaks influences if adaptive or
+global refinement is more efficient (if the solution is very smooth, local
+refinement does not give any advantage over global refinement). Verify this.
+
+Finally, a more fair comparison would be to plot runtime (switch to release
+mode first!) instead of number of unknowns on the x axis. Picking a better
+linear solver might be appropriate though.

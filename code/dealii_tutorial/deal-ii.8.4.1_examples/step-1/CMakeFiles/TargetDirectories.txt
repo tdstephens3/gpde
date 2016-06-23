@@ -1,0 +1,8 @@
+/home/tds3/gpde/code/dealii_tutorial/deal-ii.8.4.1_examples/step-1/CMakeFiles/debug.dir
+/home/tds3/gpde/code/dealii_tutorial/deal-ii.8.4.1_examples/step-1/CMakeFiles/distclean.dir
+/home/tds3/gpde/code/dealii_tutorial/deal-ii.8.4.1_examples/step-1/CMakeFiles/info.dir
+/home/tds3/gpde/code/dealii_tutorial/deal-ii.8.4.1_examples/step-1/CMakeFiles/release.dir
+/home/tds3/gpde/code/dealii_tutorial/deal-ii.8.4.1_examples/step-1/CMakeFiles/run.dir
+/home/tds3/gpde/code/dealii_tutorial/deal-ii.8.4.1_examples/step-1/CMakeFiles/runclean.dir
+/home/tds3/gpde/code/dealii_tutorial/deal-ii.8.4.1_examples/step-1/CMakeFiles/step-1.dir
+/home/tds3/gpde/code/dealii_tutorial/deal-ii.8.4.1_examples/step-1/CMakeFiles/strip_comments.dir

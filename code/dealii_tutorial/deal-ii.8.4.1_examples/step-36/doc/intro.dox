@@ -1,0 +1,269 @@
+<br>
+
+<i>This program was contributed by Toby D. Young and Wolfgang
+Bangerth.  </i>
+
+<a name="Preamble"></a> 
+<h1>Preamble</h1>
+
+The problem we want to solve in this example is an eigenspectrum
+problem. Eigenvalue problems appear in a wide context of problems, for
+example in the computation of electromagnetic standing waves in
+cavities, vibration modes of drum membranes, or oscillations of lakes
+and estuaries. One of the most enigmatic applications is probably the
+computation of stationary or quasi-static wave functions in quantum
+mechanics. The latter application is what we would like to investigate
+here, though the general techniques outlined in this program are of
+course equally applicable to the other applications above.
+
+Eigenspectrum problems have the general form
+@f{align*}
+	L \Psi &= \varepsilon \Psi \qquad &&\text{in}\ \Omega\quad,
+	\\
+	\Psi &= 0 &&\text{on}\ \partial\Omega\quad,
+@f}
+where the Dirichlet boundary condition on $\Psi=\Psi(\mathbf x)$ could also be
+replaced by Neumann or Robin conditions; $L$ is an operator that generally
+also contains differential operators.
+
+Under suitable conditions, the above equations have a set of solutions
+$\Psi_\ell,\varepsilon_\ell$, $\ell\in {\cal I}$, where $\cal I$ can
+be a finite or infinite set (and in the latter case it may be a discrete or
+sometimes at least in part a continuous set). In either case, let us note that
+there is 
+no longer just a single solution, but a set of solutions (the various
+eigenfunctions and corresponding eigenvalues) that we want to
+compute. The problem of numerically finding all eigenvalues
+(eigenfunctions) of such eigenvalue problems is a formidable
+challenge. In fact, if the set $\cal I$ is infinite, the challenge is
+of course intractable.  Most of the time however we are really only
+interested in a small subset of these values (functions); and
+fortunately, the interface to the SLEPc library that we will use for
+this tutorial program allows us to select which portion of the
+eigenspectrum and how many solutions we want to solve for.
+
+In this program, the eigenspectrum solvers we use are classes provided
+by deal.II that wrap around the linear algebra implementation of the
+<a href="http://www.grycap.upv.es/slepc/" target="_top">SLEPc</a>
+library; SLEPc itself builds on the <a
+href="http://www.mcs.anl.gov/petsc/" target="_top">PETSc</a> library
+for linear algebra contents.
+
+<a name="Intro"></a>
+<h1>Introduction</h1>
+
+The basic equation of stationary quantum mechanics is the
+Schrödinger equation which models the motion of particles in an
+external potential $V(\mathbf x)$. The particle is described by a wave
+function $\Psi(\mathbf x)$ that satisfies a relation of the
+(nondimensionalized) form
+@f{align*} [-\Delta + V(\mathbf x)]
+\Psi(\mathbf x) &= \varepsilon \Psi(\mathbf x) \qquad &&\text{in}\
+\Omega\quad, \\ \Psi &= 0 &&\text{on}\ \partial\Omega\quad.  
+@f} 
+As a consequence, this particle can only exist in a certain number of
+eigenstates that correspond to the energy eigenvalues
+$\varepsilon_\ell$ admitted as solutions of this equation. The
+orthodox (Copenhagen) interpretation of quantum mechanics posits that, if a
+particle has energy $\varepsilon_\ell$ then the probability of finding
+it at location $\mathbf x$ is proportional to $|\Psi_\ell(\mathbf
+x)|^2$ where $\Psi_\ell$ is the eigenfunction that corresponds to this
+eigenvalue.
+
+In order to numerically find solutions to this equation, i.e. a set of
+pairs of eigenvalues/eigenfunctions, we use the usual finite element
+approach of multiplying the equation from the left with test functions,
+integrating by parts, and searching for solutions in finite
+dimensional spaces by approximating $\Psi(\mathbf
+x)\approx\Psi_h(\mathbf x)=\sum_{j}\phi_j(\mathbf x)\tilde\psi_j$,
+where $\tilde\psi$ is a vector of expansion coefficients. We then
+immediately arrive at the following equation that discretizes the
+continuous eigenvalue problem: @f[ \sum_j [(\nabla\phi_i,
+\nabla\phi_j)+(V(\mathbf x)\phi_i,\phi_j)] \tilde{\psi}_j =
+\varepsilon_h \sum_j (\phi_i, \phi_j) \tilde{\psi}_j\quad.  @f] In
+matrix and vector notation, this equation then reads: @f[ A
+\tilde{\Psi} = \varepsilon_h M \tilde{\Psi} \quad, @f] where $A$ is
+the stiffness matrix arising from the differential operator $L$, and
+$M$ is the mass matrix. The solution to the eigenvalue problem is an
+eigenspectrum $\varepsilon_{h,\ell}$, with associated eigenfunctions
+$\Psi_\ell=\sum_j \phi_j\tilde{\psi}_j$.
+
+
+<h3>Eigenvalues and Dirichlet boundary conditions</h3>
+
+In this program, we use Dirichlet boundary conditions for the wave
+function $\Psi$. What this means, from the perspective of a finite
+element code, is that only the interior degrees of freedom are real
+degrees of <i>freedom</i>: the ones on the boundary are not free but
+are forced to have a zero value, after all. On the other hand, the
+finite element method gains much of its power and simplicity from
+the fact that we just do the same thing on every cell, without
+having to think too much about where a cell is, whether it bounds
+on a less refined cell and consequently has a hanging node, or is 
+adjacent to the boundary. All such checks would make the assembly
+of finite element linear systems unbearably difficult to write and
+even more so to read. 
+
+Consequently, of course, when you distribute degrees of freedom with
+your DoFHandler object, you don't care whether some of the degrees
+of freedom you enumerate are at a Dirichlet boundary. They all get
+numbers. We just have to take care of these degrees of freedom at a
+later time when we apply boundary values. There are two basic ways
+of doing this (either using MatrixTools::apply_boundary_values() 
+<i>after</i> assembling the linear system, or using
+ConstraintMatrix::distribute_local_to_global() <i>during</i> assembly;
+see the @ref constraints "constraints module" for more information),
+but both result in the same: a linear system that has a total
+number of rows equal to the number of <i>all</i> degrees of freedom,
+including those that lie on the boundary. However, degrees of 
+freedom that are constrained by Dirichlet conditions are separated
+from the rest of the linear system by zeroing out the corresponding
+row and column, putting a single positive entry on the diagonal,
+and the corresponding Dirichlet value on the right hand side.
+
+If you assume for a moment that we had renumbered degrees of freedom
+in such a way that all of those on the Dirichlet boundary come last,
+then the linear system we would get when solving a regular PDE with
+a right hand side would look like this:
+@f{align*}
+  \begin{pmatrix}
+    A_i & 0 \\ 0 & D_b
+  \end{pmatrix}
+  \begin{pmatrix}
+    U_i \\ U_b
+  \end{pmatrix}
+  =
+  \begin{pmatrix}
+    F_i \\ F_b
+  \end{pmatrix}.
+@f}
+Here, subscripts $i$ and $b$ correspond to interior and boundary 
+degrees of freedom, respectively. The interior degrees of freedom
+satisfy the linear system $A_i U_i=F_i$ which yields the correct
+solution in the interior, and boundary values are determined by
+$U_b = D_b^{-1} F_b$ where $D_b$ is a diagonal matrix that results
+from the process of eliminating boundary degrees of freedom, and
+$F_b$ is chosen in such a way that $U_{b,j}=D_{b,jj}^{-1} F_{b,j}$
+has the correct boundary values for every boundary degree of freedom
+$j$. (For the curious, the entries of the 
+matrix $D_b$ result from adding modified local contributions to the
+global matrix where for the local matrices the diagonal elements, if non-zero, 
+are set to their absolute value; otherwise, they are set to the average of  
+absolute values of the diagonal. This process guarantees that the entries
+of $D_b$ are positive and of a size comparable to the rest of the diagonal
+entries, ensuring that the resulting matrix does not incur unreasonable
+losses of accuracy due to roundoff involving matrix entries of drastically
+different size. The actual values that end up on the diagonal are difficult
+to predict and you should treat them as arbitrary and unpredictable, but
+positive.)
+
+For "regular" linear systems, this all leads to the correct solution.
+On the other hand, for eigenvalue problems, this is not so trivial.
+There, eliminating boundary values affects both matrices
+$A$ and $M$ that we will solve with in the current tutorial program.
+After elimination of boundary values, we then receive an eigenvalue
+problem that can be partitioned like this:
+@f{align*}
+  \begin{pmatrix}
+    A_i & 0 \\ 0 & D_A
+  \end{pmatrix}
+  \begin{pmatrix}
+    \tilde\Psi_i \\ \tilde\Psi_b
+  \end{pmatrix}
+  =
+  \epsilon_h
+  \begin{pmatrix}
+    M_i & 0 \\ 0 & D_M
+  \end{pmatrix}
+  \begin{pmatrix}
+    \tilde\Psi_i \\ \tilde\Psi_b
+  \end{pmatrix}.
+@f}
+This form makes it clear that there are two sets of eigenvalues:
+the ones we care about, and spurious eigenvalues from the
+separated problem
+@f[
+  D_A \tilde \Psi_b = \epsilon_h D_M \Psi_b.
+@f]
+These eigenvalues are spurious since they result from an eigenvalue
+system that operates only on boundary nodes -- nodes that are not
+real degrees of <i>freedom</i>.
+Of course, since the two matrices $D_A,D_M$ are diagonal, we can
+exactly quantify these spurious eigenvalues: they are
+$\varepsilon_{h,j}=A_{jj}/M_{jj}$ (where the indices
+$j$ corresponds exactly to the degrees of freedom that are constrained
+by Dirichlet boundary values).
+
+So how does one deal with them? The fist part is to recognize when our
+eigenvalue solver finds one of them. To this end, the program computes
+and prints an interval within which these eigenvalues lie, by computing
+the minimum and maximum of the expression $\varepsilon_{h,j}=A_{jj}/M_{jj}$
+over all constrained degrees of freedom. In the program below, this
+already suffices: we find that this interval lies outside the set of
+smallest eigenvalues and corresponding eigenfunctions we are interested
+in and compute, so there is nothing we need to do here.
+
+On the other hand, it may happen that we find that one of the eigenvalues
+we compute in this program happens to be in this interval, and in that
+case we would not know immediately whether it is a spurious or a true
+eigenvalue. In that case, one could simply scale the diagonal elements of
+either matrix after computing the two matrices, 
+thus shifting them away from the frequency of interest in the eigen-spectrum.
+This can be done by using the following code, making sure that all spurious
+eigenvalues are exactly equal to $1.234\cdot 10^5$:
+@code
+    for (unsigned int i = 0; i < dof_handler.n_dofs(); ++i)
+      if (constraints.is_constrained(i))
+        {
+          stiffness_matrix.set(i, i, 1.234e5);
+          mass_matrix.set(i, i, 1);
+        }
+@endcode 
+However, this strategy is not pursued here as the spurious eigenvalues
+we get from our program as-is happen to be greater than the lowest 
+five that we will calculate and are interested in.
+
+
+<h3>Implementation details</h3>
+
+The program below is essentially just a slightly modified version of 
+step-4. The things that are different are the following:
+
+<ul> 
+
+<li>The main class (named <code>EigenvalueProblem</code>) now no
+longer has a single solution vector, but a whole set of vectors for
+the various eigenfunctions we want to compute. Moreover, the
+<code>main</code> function, which has the top-level control over
+everything here, initializes and finalizes the interface to SLEPc and
+PETSc simultaneously via <code>SlepcInitialize</code> and
+<code>SlepFinalize</code>.</li>
+
+<li>We use PETSc matrices and vectors as in step-17 and
+step-18 since that is what the SLEPc eigenvalue solvers
+require.</li>
+
+<li>The function <code>EigenvalueProblem::solve</code> is entirely
+different from anything seen so far in the tutorial, as it does not
+just solve a linear system but actually solves the eigenvalue problem.
+It is built on the SLEPc library, and more immediately on the deal.II
+SLEPc wrappers in the class SLEPcWrappers::SolverKrylovSchur.</li>
+
+<li>We use the ParameterHandler class to describe a few input
+parameters, such as the exact form of the potential $V({\mathbf
+x})$, the number of global refinement steps of the mesh,
+or the number of eigenvalues we want to solve for. We could go much
+further with this but stop at making only a few of the things that one
+could select at run time actual input file parameters. In order to see
+what could be done in this regard, take a look at @ref step_29
+"step-29", step-33, and in particular @ref step_19
+"step-19".</li>
+
+<li>We use the FunctionParser class to make the potential $V(\mathbf
+x)$ a run-time parameter that can be specified in the input file as a
+formula.</li>
+
+</ul>
+
+The rest of the program follows in a pretty straightforward way from 
+step-4.

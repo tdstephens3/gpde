@@ -1,0 +1,291 @@
+<a name="Results"></a>
+<h1>Results</h1>
+
+We run the problem with the mesh <code>slide.inp</code> (this file is in the
+same directory as the source code for this program) and the following input
+deck (available as <code>input.prm</code> in the same directory):
+@verbatim
+# Listing of Parameters
+# ---------------------
+
+# The input grid
+set mesh = slide.inp
+
+# Stabilization parameter
+set diffusion power = 2.0
+
+# --------------------------------------------------
+# Boundary conditions
+# We may specify boundary conditions for up to MAX_BD boundaries.
+# Your .inp file should have these boundaries designated.
+subsection boundary_1
+  set no penetration = true # reflective boundary condition
+end
+
+subsection boundary_2
+  # outflow boundary
+  # set w_2 = pressure
+  # set w_2 value = 1.5 - y
+end
+
+subsection boundary_3
+  set no penetration = true # reflective
+  # set w_3 = pressure
+  # set w_3 value = 1.0
+end
+
+subsection boundary_4
+  set no penetration = true #reflective
+end
+
+# --------------------------------------------------
+# Initial Conditions
+# We set the initial conditions of the conservative variables.  These lines
+# are passed to the expression parsing function.  You should use x,y,z for
+# the coordinate variables.
+
+subsection initial condition
+  set w_0 value = 0
+  set w_1 value = 0
+  set w_2 value = 10*(x<-0.7)*(y> 0.3)*(y< 0.45) + (1-(x<-0.7)*(y> 0.3)*(y< 0.45))*1.0
+  set w_3 value = (1.5-(1.0*1.0*y))/0.4
+end
+
+# --------------------------------------------------
+# Time stepping control
+subsection time stepping
+  set final time = 10.0 # simulation end time
+  set time step  = 0.02 # simulation time step
+  set theta scheme value = 0.5
+end
+
+subsection linear solver
+  set output         = quiet
+  set method         = gmres
+  set ilut fill      = 1.5
+  set ilut drop tolerance = 1e-6
+  set ilut absolute tolerance = 1e-6
+  set ilut relative tolerance = 1.0
+end
+
+# --------------------------------------------------
+# Output frequency and kind
+subsection output
+  set step           = 0.01
+  set schlieren plot = true
+end
+
+# --------------------------------------------------
+# Refinement control
+subsection refinement
+  set refinement = true # none only other option
+  set shock value = 1.5
+  set shock levels = 1 # how many levels of refinement to allow
+end
+
+# --------------------------------------------------
+# Flux parameters
+subsection flux
+ set stab = constant
+ #set stab value = 1.0
+end
+@endverbatim
+
+When we run the program, we get the following kind of output:
+@verbatim
+...
+T=0.14
+   Number of active cells:       1807
+   Number of degrees of freedom: 7696
+
+   NonLin Res     Lin Iter       Lin Res
+   _____________________________________
+   7.015e-03        0008        3.39e-13
+   2.150e-05        0008        1.56e-15
+   2.628e-09        0008        5.09e-20
+   5.243e-16        (converged)
+
+T=0.16
+   Number of active cells:       1807
+   Number of degrees of freedom: 7696
+
+   NonLin Res     Lin Iter       Lin Res
+   _____________________________________
+   7.145e-03        0008        3.80e-13
+   2.548e-05        0008        7.20e-16
+   4.063e-09        0008        2.49e-19
+   5.970e-16        (converged)
+
+T=0.18
+   Number of active cells:       1807
+   Number of degrees of freedom: 7696
+
+   NonLin Res     Lin Iter       Lin Res
+   _____________________________________
+   7.395e-03        0008        6.69e-13
+   2.867e-05        0008        1.33e-15
+   4.091e-09        0008        3.35e-19
+   5.617e-16        (converged)
+...
+@endverbatim
+
+This output reports the progress of the Newton iterations and the time
+stepping. Note that our implementation of the Newton iteration indeed shows
+the expected quadratic convergence order: the norm of the nonlinear residual
+in each step is roughly the norm of the previous step squared. This leads to
+the very rapid convergence we can see here. This holds until
+times up to $t=1.9$ at which time the nonlinear iteration reports a
+lack of convergence:
+@verbatim
+...
+
+T=1.88
+   Number of active cells:       2119
+   Number of degrees of freedom: 9096
+
+   NonLin Res     Lin Iter       Lin Res
+   _____________________________________
+   2.251e-01        0012        9.78e-12
+   5.698e-03        0012        2.04e-13
+   3.896e-05        0012        1.48e-15
+   3.915e-09        0012        1.94e-19
+   8.800e-16        (converged)
+
+T=1.9
+   Number of active cells:       2140
+   Number of degrees of freedom: 9184
+
+   NonLin Res     Lin Iter       Lin Res
+   _____________________________________
+   2.320e-01        0013        3.94e-12
+   1.235e-01        0016        6.62e-12
+   8.494e-02        0016        6.05e-12
+   1.199e+01        0026        5.72e-10
+   1.198e+03        0002        1.20e+03
+   7.030e+03        0001        nan
+   7.030e+03        0001        nan
+   7.030e+03        0001        nan
+   7.030e+03        0001        nan
+   7.030e+03        0001        nan
+   7.030e+03        0001        nan
+
+
+----------------------------------------------------
+Exception on processing:
+
+--------------------------------------------------------
+An error occurred in line <2476> of file <\step-33.cc> in function
+    void Step33::ConservationLaw<dim>::run() [with int dim = 2]
+The violated condition was:
+    nonlin_iter <= 10
+The name and call sequence of the exception was:
+    ExcMessage ("No convergence in nonlinear solver")
+Additional Information:
+No convergence in nonlinear solver
+--------------------------------------------------------
+
+Aborting!
+----------------------------------------------------
+@endverbatim
+
+We may find out the cause and possible remedies by looking at the animation of the solution.
+
+The result of running these computations is a bunch of output files that we
+can pass to our visualization program of choice. When we collate them into a
+movie, the results of last several time steps looks like this:
+
+<img src="https://www.dealii.org/images/steps/developer/step-33.oscillation.gif " alt="" height="300">
+
+As we see, when the heavy mass of fluid hits the left bottom corner,
+some oscillation occurs and lead to the divergence of the iteration. A lazy solution to
+this issue is add more viscosity. If we set the diffusion power $\eta = 1.5$ instead of $2.0$,
+the simulation would be able to survive this crisis. Then, the result looks like this:
+
+
+<img src="https://www.dealii.org/images/steps/developer/step-33.slide.ed2.gif " alt="" height="300">
+
+The heavy mass of fluid is drawn down the slope by gravity, where
+it collides with the ski lodge and is flung into the air!  Hopefully everyone
+escapes! And also, we can see the boundary between heavy mass and light mass blur quickly
+due to the artificial viscosity.
+
+We can also visualize the evolution of the adaptively refined grid:
+
+<img src="https://www.dealii.org/images/steps/developer/step-33.slide.adapt.ed2.gif " alt="" height="300">
+
+The adaptivity follows and precedes the flow pattern, based on the heuristic
+refinement scheme discussed above.
+
+
+
+
+<a name="extensions"></a>
+<h3>Possibilities for extensions</h3>
+
+<h4>Stabilization</h4>
+
+The numerical scheme we have chosen is not particularly
+stable when the artificial viscosity is samll while is too diffusive when
+the artificial viscosity is large. Furthermore, it is known there are more
+advanced techniques to stabilize the solution, for example streamline
+diffusion, least-squares stabilization terms, entropy viscosity.
+
+
+
+<h4>Better linear solvers</h4>
+
+While the Newton method as a nonlinear solver appears to work very
+well if the time step is small enough, the linear solver can be
+improved. For example, in the current scheme whenever we use an
+iterative solver, an ILU is computed anew for each Newton step;
+likewise, for the direct solver, an LU decomposition of the Newton
+matrix is computed in each step. This is obviously wasteful: from one
+Newton step to another, and probably also between time steps, the
+Newton matrix does not radically change: an ILU or a sparse LU
+decomposition for one Newton step is probably still a very good
+preconditioner for the next Newton or time step. Avoiding the
+recomputation would therefore be a good way to reduce the amount of
+compute time.
+
+One could drive this a step further: since close to convergence the
+Newton matrix changes only a little bit, one may be able to define a
+quasi-Newton scheme where we only re-compute the residual (i.e. the
+right hand side vector) in each Newton iteration, and re-use the
+Newton matrix. The resulting scheme will likely not be of quadratic
+convergence order, and we have to expect to do a few more nonlinear
+iterations; however, given that we don't have to spend the time to
+build the Newton matrix each time, the resulting scheme may well be
+faster.
+
+
+<h4>Cache the explicit part of residual</h4>
+
+The residual calulated in ConservationLaw::assemble_cell_term function
+reads 
+   $R_i = \left(\frac{\mathbf{w}^{k}_{n+1} - \mathbf{w}_n}{\delta t}
+    , \mathbf{z}_i \right)_K  +
+      \theta \mathbf{B}({\mathbf{w}^{k}_{n+1}})(\mathbf{z}_i)_K +
+      (1-\theta) \mathbf{B}({\mathbf{w}_{n}}) (\mathbf{z}_i)_K $
+This means that we calculate the spatial residual twice at one Newton
+iteration step: once respect to the current solution $\mathbf{w}^{k}_{n+1}$
+and once more respect to the last time step solution $\mathbf{w}_{n}$ which
+remains the same during all Newton iterations through one timestep.
+Cache up the explicit part of residual
+ $ \mathbf{B}({\mathbf{w}_{n}}) (\mathbf{z}_i)_K$
+during Newton iteration will save lots of labor.
+
+
+<h4>Other conservation laws</h4>
+
+Finally, as a direction beyond the immediate solution of the Euler
+equations, this program tries very hard to separate the implementation
+of everything that is specific to the Euler equations into one class
+(the <code>EulerEquation</code> class), and everything that is
+specific to assembling the matrices and vectors, nonlinear and linear
+solvers, and the general top-level logic into another (the
+<code>ConservationLaw</code> class).
+
+By replacing the definitions of flux matrices and numerical fluxes in
+this class, as well as the various other parts defined there, it
+should be possible to apply the <code>ConservationLaw</code> class to
+other hyperbolic conservation laws as well.
