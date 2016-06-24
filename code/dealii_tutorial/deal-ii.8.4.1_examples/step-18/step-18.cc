@@ -776,9 +776,8 @@ namespace Step18
   // the other time steps. Note that for simplicity we use a fixed time step,
   // whereas a more sophisticated program would of course have to choose it in
   // some more reasonable way adaptively:
-  template <int dim>
-  void TopLevel<dim>::run ()
-  {
+  template <int dim> void TopLevel<dim>::run () {
+    
     present_time = 0;
     present_timestep = 1;
     end_time = 10;
@@ -1002,8 +1001,9 @@ namespace Step18
   //
   // The first part of the assembly routine is as always:
   template <int dim>
-  void TopLevel<dim>::assemble_system ()
-  {
+  void TopLevel<dim>::assemble_system () {
+  /*{{{*/
+
     system_rhs = 0;
     system_matrix = 0;
 
@@ -1168,6 +1168,7 @@ namespace Step18
                                         system_matrix, tmp,
                                         system_rhs, false);
     incremental_displacement = tmp;
+  /*}}}*/
   }
 
 
@@ -1178,8 +1179,9 @@ namespace Step18
   // a timestep. The order of things should be relatively self-explanatory
   // from the function names:
   template <int dim>
-  void TopLevel<dim>::solve_timestep ()
-  {
+  void TopLevel<dim>::solve_timestep () {
+  /*{{{*/
+
     pcout << "    Assembling system..." << std::flush;
     assemble_system ();
     pcout << " norm of rhs is " << system_rhs.l2_norm()
@@ -1193,6 +1195,7 @@ namespace Step18
     pcout << "    Updating quadrature point data..." << std::flush;
     update_quadrature_point_history ();
     pcout << std::endl;
+  /*}}}*/
   }
 
 
@@ -1212,8 +1215,9 @@ namespace Step18
   // node constraints are then distributed only on the local copy,
   // i.e. independently of each other on each of the processors:
   template <int dim>
-  unsigned int TopLevel<dim>::solve_linear_problem ()
-  {
+  unsigned int TopLevel<dim>::solve_linear_problem () {
+  /*{{{*/
+
     PETScWrappers::MPI::Vector
     distributed_incremental_displacement (locally_owned_dofs,mpi_communicator);
     distributed_incremental_displacement = incremental_displacement;
@@ -1233,6 +1237,7 @@ namespace Step18
     hanging_node_constraints.distribute (incremental_displacement);
 
     return solver_control.last_step();
+  /*}}}*/
   }
 
 
@@ -1433,8 +1438,8 @@ namespace Step18
   // console, without having to explicitly code an if-statement in each place
   // where we generate output:
   template <int dim>
-  void TopLevel<dim>::do_initial_timestep ()
-  {
+  void TopLevel<dim>::do_initial_timestep () {
+
     present_time += present_timestep;
     ++timestep_no;
     pcout << "Timestep " << timestep_no << " at time " << present_time

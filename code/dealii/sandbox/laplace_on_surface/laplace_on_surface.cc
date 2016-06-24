@@ -238,25 +238,17 @@ namespace laplace_on_surface
     gi.read (in);
 
     Triangulation<2,3>::active_cell_iterator cell = triangulation.begin_active();
-    cell->set_all_manifold_ids(1);
+    cell->set_all_manifold_ids(0);
 
-    for (unsigned int f=0; f<GeometryInfo<2>::faces_per_cell; ++f) {
-      if (cell->face(f)->at_boundary()) {
-        cout << "cell found at boundary!" << endl;
-        cell->face(f)->set_manifold_id(2);
-      }
-    }
 
     Assert(wires.size() > 0,
            ExcMessage("I could not find any wire in the CAD file you gave me. Bailing out."));
 
-    static OpenCASCADE::ArclengthProjectionLineManifold<2,3> line_projector (wires[0], tolerance);
-    triangulation.set_manifold(2, line_projector);
-
     static OpenCASCADE::NormalProjectionBoundary<2,3> normal_projector(cad_surface, tolerance);
-    triangulation.set_manifold(1,normal_projector);
+    
+    triangulation.set_manifold(0,normal_projector);
   
-    triangulation.refine_global(2);
+    triangulation.refine_global(1);
     
     
     // output results
