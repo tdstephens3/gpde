@@ -58,8 +58,12 @@ void first_grid ()
   Triangulation<dim,spacedim> triangulation;
 
   //std::string in_mesh_filename = "ellipsoid_mesh.ucd";
-  std::string in_mesh_filename = "unit_cube_surface.ucd";
-  std::string out_mesh_filename = "mesh.vtk";
+  std::string in_mesh_filename = "sphere_mesh.ucd";
+  //std::string in_mesh_filename = "brick_mesh.ucd";
+  
+  //std::string out_mesh_filename = "ellipsoid_mesh.vtk";
+  //std::string out_mesh_filename = "sphere_mesh.vtk";
+  std::string out_mesh_filename = "brick_mesh.vtk";
     
   std::ifstream in;
   in.open(in_mesh_filename.c_str());
@@ -72,7 +76,7 @@ void first_grid ()
   GridOut grid_out;
   std::ofstream out_vtk (out_mesh_filename);
   grid_out.write_vtk (triangulation, out_vtk);
-  std::cout << "Grid written to mesh.vtk" << std::endl;
+  std::cout << "Grid written to " << out_mesh_filename.c_str() << std::endl;
 
   //triangulation.refine_global (0);
 

@@ -223,8 +223,9 @@ namespace Step26
   // condense the constraints in run() after combining the matrices for the
   // current time-step.
   template<int dim>
-  void HeatEquation<dim>::setup_system()
-  {
+  void HeatEquation<dim>::setup_system() {
+  /*{{{*/
+
     dof_handler.distribute_dofs(fe);
 
     std::cout << std::endl
@@ -262,6 +263,7 @@ namespace Step26
     solution.reinit(dof_handler.n_dofs());
     old_solution.reinit(dof_handler.n_dofs());
     system_rhs.reinit(dof_handler.n_dofs());
+  /*}}}*/
   }
 
 
@@ -270,8 +272,9 @@ namespace Step26
   // The next function is the one that solves the actual linear system
   // for a single time step. There is nothing surprising here:
   template<int dim>
-  void HeatEquation<dim>::solve_time_step()
-  {
+  void HeatEquation<dim>::solve_time_step() {
+  /*{{{*/
+    
     SolverControl solver_control(1000, 1e-8 * system_rhs.l2_norm());
     SolverCG<> cg(solver_control);
 
@@ -285,6 +288,7 @@ namespace Step26
 
     std::cout << "     " << solver_control.last_step()
               << " CG iterations." << std::endl;
+  /*}}}*/
   }
 
 
@@ -437,8 +441,9 @@ namespace Step26
   // let's first look at the code and we'll come back to the issue
   // at the end of function.
   template<int dim>
-  void HeatEquation<dim>::run()
-  {
+  void HeatEquation<dim>::run() {
+  /*{{{*/
+
     const unsigned int initial_global_refinement = 2;
     const unsigned int n_adaptive_pre_refinement_steps = 4;
 
@@ -584,6 +589,7 @@ start_time_iteration:
           }
 
         old_solution = solution;
+      /*}}}*/
       }
   }
 }

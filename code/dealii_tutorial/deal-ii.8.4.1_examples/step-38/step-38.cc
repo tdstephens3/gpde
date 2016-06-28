@@ -334,8 +334,8 @@ namespace Step38
     triangulation.set_manifold (0, surface_description);
     triangulation.refine_global(3);
 
-    triangulation.set_all_manifold_ids(0);
-    triangulation.set_manifold (0, surface_description);
+    //triangulation.set_all_manifold_ids(0);
+    //triangulation.set_manifold (0, surface_description);
     }
 
     triangulation.refine_global(1);

@@ -210,7 +210,8 @@ namespace laplace_on_surface
   void LaplaceBeltramiProblem<spacedim>::make_grid_and_dofs () {
   /*{{{*/
       
-    const std::string cad_file_name = "ellipsoid_cad_surface.iges";
+    //const std::string cad_file_name = "ellipsoid_cad_surface.iges";
+    const std::string cad_file_name = "sphere.iges";
     TopoDS_Shape cad_surface = OpenCASCADE::read_IGES(cad_file_name, 1);
 
     const double tolerance = OpenCASCADE::get_shape_tolerance(cad_surface) * 5;
@@ -229,7 +230,8 @@ namespace laplace_on_surface
                                          wires);
 
     std::ifstream in;
-    std::string in_mesh_filename = "ellipsoid_mesh_140.ucd";
+    //std::string in_mesh_filename = "ellipsoid_mesh_140.ucd";
+    std::string in_mesh_filename = "sphere_mesh.ucd";
     
     in.open(in_mesh_filename.c_str());
 
@@ -238,7 +240,7 @@ namespace laplace_on_surface
     gi.read (in);
 
     Triangulation<2,3>::active_cell_iterator cell = triangulation.begin_active();
-    cell->set_all_manifold_ids(0);
+    cell->set_all_manifold_ids(1);
 
 
     Assert(wires.size() > 0,
@@ -246,13 +248,13 @@ namespace laplace_on_surface
 
     static OpenCASCADE::NormalProjectionBoundary<2,3> normal_projector(cad_surface, tolerance);
     
-    triangulation.set_manifold(0,normal_projector);
+    triangulation.set_manifold(1,normal_projector);
   
-    triangulation.refine_global(1);
+    triangulation.refine_global(2);
     
     
     // output results
-    const std::string out_filename = "surface.vtk";
+    const std::string out_filename = "sphere_surface.vtk";
     std::ofstream logfile(out_filename.c_str());
     GridOut grid_out;
     grid_out.write_vtk(triangulation, logfile);
