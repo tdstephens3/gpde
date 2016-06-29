@@ -1,5 +1,4 @@
-/* ---------------------------------------------------------------------
- *
+ /*
  * Copyright (C) 2010 - 2015 by the deal.II authors
  *
  * This file is part of the deal.II library.
@@ -107,20 +106,6 @@ namespace laplace_on_surface
 // function definitions for Solution class
 /*{{{*/
   template <>
-  double Solution<2>::value (const Point<2> &p, const unsigned int) const {
-    return ( -2. * p(0) * p(1) );
-  }
-
-  template <>
-  Tensor<1,2> Solution<2>::gradient (const Point<2>   &p, const unsigned int) const {
-    Tensor<1,2> return_value;
-    return_value[0] = -2. * p(1) * (1 - 2. * p(0) * p(0));
-    return_value[1] = -2. * p(0) * (1 - 2. * p(1) * p(1));
-
-    return return_value;
-  }
-
-  template <>
   double Solution<3>::value (const Point<3> &p, const unsigned int) const {
     return (std::sin(numbers::PI * p(0)) *
             std::cos(numbers::PI * p(1))*exp(p(2)));
@@ -128,8 +113,8 @@ namespace laplace_on_surface
 
   template <>
   Tensor<1,3> Solution<3>::gradient (const Point<3>   &p, const unsigned int) const {
-    using numbers::PI;
 
+    using numbers::PI;
     Tensor<1,3> return_value;
 
     return_value[0] = PI *cos(PI * p(0))*cos(PI * p(1))*exp(p(2));
@@ -155,15 +140,9 @@ namespace laplace_on_surface
 // function definitions for RightHandSide class
 /*{{{*/
   template <>
-  double RightHandSide<2>::value (const Point<2> &p, const unsigned int /*component*/) const {
-  /*{{{*/
-    return ( -8. * p(0) * p(1) );
-  /*}}}*/
-  }
-
-  template <>
   double RightHandSide<3>::value (const Point<3> &p, const unsigned int /*component*/) const {
   /*{{{*/
+
     using numbers::PI;
 
     Tensor<2,3> hessian;
@@ -209,49 +188,67 @@ namespace laplace_on_surface
   template <int spacedim>
   void LaplaceBeltramiProblem<spacedim>::make_grid_and_dofs () {
   /*{{{*/
+    
+    const std::string manifold_method = "cad";
+    //const std::string manifold_method = "GridGenerator";
+    
+    if (manifold_method == "cad") {
+      cout << "using cad generated mesh" << endl;
+      const std::string cad_file_name = "sphere.iges";
+      TopoDS_Shape cad_surface = OpenCASCADE::read_IGES(cad_file_name, 1);
+
+      const double tolerance = OpenCASCADE::get_shape_tolerance(cad_surface) * 5;
+
+      std::vector<TopoDS_Compound>  compounds;
+      std::vector<TopoDS_CompSolid> compsolids;
+      std::vector<TopoDS_Solid>     solids;
+      std::vector<TopoDS_Shell>     shells;
+      std::vector<TopoDS_Wire>      wires;
+
+      OpenCASCADE::extract_compound_shapes(cad_surface,
+                                           compounds,
+                                           compsolids,
+                                           solids,
+                                           shells,
+                                           wires);
+
+      std::ifstream in;
+      std::string in_mesh_filename = "sphere_mesh.ucd";
       
-    //const std::string cad_file_name = "ellipsoid_cad_surface.iges";
-    const std::string cad_file_name = "sphere.iges";
-    TopoDS_Shape cad_surface = OpenCASCADE::read_IGES(cad_file_name, 1);
+      in.open(in_mesh_filename.c_str());
 
-    const double tolerance = OpenCASCADE::get_shape_tolerance(cad_surface) * 5;
+      GridIn<2,3> gi;
+      gi.attach_triangulation(triangulation);
+      gi.read (in);
 
-    std::vector<TopoDS_Compound>  compounds;
-    std::vector<TopoDS_CompSolid> compsolids;
-    std::vector<TopoDS_Solid>     solids;
-    std::vector<TopoDS_Shell>     shells;
-    std::vector<TopoDS_Wire>      wires;
-
-    OpenCASCADE::extract_compound_shapes(cad_surface,
-                                         compounds,
-                                         compsolids,
-                                         solids,
-                                         shells,
-                                         wires);
-
-    std::ifstream in;
-    //std::string in_mesh_filename = "ellipsoid_mesh_140.ucd";
-    std::string in_mesh_filename = "sphere_mesh.ucd";
-    
-    in.open(in_mesh_filename.c_str());
-
-    GridIn<2,3> gi;
-    gi.attach_triangulation(triangulation);
-    gi.read (in);
-
-    Triangulation<2,3>::active_cell_iterator cell = triangulation.begin_active();
-    cell->set_all_manifold_ids(1);
+      Triangulation<2,3>::active_cell_iterator cell = triangulation.begin_active();
+      cell->set_all_manifold_ids(1);
 
 
-    Assert(wires.size() > 0,
-           ExcMessage("I could not find any wire in the CAD file you gave me. Bailing out."));
+      Assert(wires.size() > 0,
+             ExcMessage("I could not find any wire in the CAD file you gave me. Bailing out."));
 
-    static OpenCASCADE::NormalProjectionBoundary<2,3> normal_projector(cad_surface, tolerance);
-    
-    triangulation.set_manifold(1,normal_projector);
+      static OpenCASCADE::NormalProjectionBoundary<2,3> normal_projector(cad_surface, tolerance);
+      
+
+      triangulation.set_manifold(1,normal_projector);
   
-    triangulation.refine_global(2);
-    
+      triangulation.refine_global(3);
+      
+    }
+    else if (manifold_method == "GridGenerator") {
+      
+      cout << "using GridGenerator generated mesh" << endl;
+      static SphericalManifold<dim,spacedim> surface_description;
+      GridGenerator::hyper_sphere(triangulation);
+      triangulation.set_all_manifold_ids(1);
+      triangulation.set_manifold (1, surface_description);
+      triangulation.refine_global(3);
+    }
+    else {
+      cout << "in make_grid_and_dofs(): manifold_method not set correctly" << endl;
+      exit(1);
+    }
     
     // output results
     const std::string out_filename = "sphere_surface.vtk";
@@ -315,7 +312,6 @@ namespace laplace_on_surface
         cell_matrix = 0;
         cell_rhs = 0;
 
-        cout << "about to reinit..." << endl;
         fe_values.reinit (cell);
 
         rhs.value_list (fe_values.get_quadrature_points(), rhs_values);
@@ -446,7 +442,7 @@ int main ()
       using namespace laplace_on_surface;
 
       const unsigned int spacedim = 3;
-      LaplaceBeltramiProblem<spacedim> laplace_beltrami;
+      LaplaceBeltramiProblem<spacedim> laplace_beltrami(1); // default: degree=2
       
       cout << "about to run laplace_beltrami..." << endl;
       laplace_beltrami.run();
