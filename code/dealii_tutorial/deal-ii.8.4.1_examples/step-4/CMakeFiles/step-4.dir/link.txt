@@ -1,1 +1,0 @@
-/usr/bin/c++        -rdynamic -fuse-ld=gold -pthread -ggdb CMakeFiles/step-4.dir/step-4.cc.o  -o step-4 -rdynamic /usr/local/lib/libdeal_II.g.so.8.4.1 -lm -ldl -lrt -Wl,-rpath,/usr/local/lib 
