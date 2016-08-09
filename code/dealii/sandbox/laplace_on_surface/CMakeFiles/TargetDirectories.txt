@@ -1,8 +1,0 @@
-/home/tds3/gpde/code/dealii/sandbox/laplace_on_surface/CMakeFiles/debug.dir
-/home/tds3/gpde/code/dealii/sandbox/laplace_on_surface/CMakeFiles/distclean.dir
-/home/tds3/gpde/code/dealii/sandbox/laplace_on_surface/CMakeFiles/info.dir
-/home/tds3/gpde/code/dealii/sandbox/laplace_on_surface/CMakeFiles/laplace_on_surface.dir
-/home/tds3/gpde/code/dealii/sandbox/laplace_on_surface/CMakeFiles/release.dir
-/home/tds3/gpde/code/dealii/sandbox/laplace_on_surface/CMakeFiles/run.dir
-/home/tds3/gpde/code/dealii/sandbox/laplace_on_surface/CMakeFiles/runclean.dir
-/home/tds3/gpde/code/dealii/sandbox/laplace_on_surface/CMakeFiles/strip_comments.dir
