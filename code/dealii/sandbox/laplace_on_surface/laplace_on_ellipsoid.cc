@@ -138,7 +138,7 @@ private:
 
 
 template <int dim, int spacedim>
-Ellipsoid<dim,spacedim>::Ellipsoid(double a, double b, double c) : SphericalManifold<dim,spacedim>(center), a(a), b(b),c(c), center(0,0,0)       
+Ellipsoid<dim,spacedim>::Ellipsoid(double a, double b, double c) : center(0,0,0), SphericalManifold<dim,spacedim>(center), a(a), b(b),c(c)        
 {
   /*{{{*/
   max_axis = std::max(std::max(a,b),c);
