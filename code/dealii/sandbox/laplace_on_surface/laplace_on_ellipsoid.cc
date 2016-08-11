@@ -320,9 +320,11 @@ public:
   
   void set_timestep(double &timestep);
   void set_theta(double theta);
+  void set_end_time(double end_time);
   
   double timestep;
   double theta;
+  double end_time;
 
 private:
   static const unsigned int dim = spacedim-1;
@@ -341,6 +343,8 @@ private:
   MappingQ<dim, spacedim>       mapping;
 
   SparsityPattern               sparsity_pattern;
+  SparseMatrix<double>          mass_matrix;
+  SparseMatrix<double>          laplace_matrix;
   SparseMatrix<double>          system_matrix;
   SparseMatrix<double>          rhs_matrix;
 
@@ -369,6 +373,13 @@ void LaplaceBeltramiProblem<spacedim>::set_theta(double theta)
 {
   this->theta = theta;
 }
+
+  template<int spacedim>
+void LaplaceBeltramiProblem<spacedim>::set_end_time(double end_time) 
+{
+  this->end_time = end_time;
+}
+
 
 
 template <int spacedim>
@@ -423,11 +434,6 @@ void LaplaceBeltramiProblem<spacedim>::make_grid_and_dofs ()
   DoFTools::make_sparsity_pattern (dof_handler, dsp);
   sparsity_pattern.copy_from (dsp);
 
-  system_matrix.reinit (sparsity_pattern);
-  old_solution.reinit (dof_handler.n_dofs());
-  solution.reinit (dof_handler.n_dofs());
-  rhs_matrix.reinit (sparsity_pattern);
-  system_rhs.reinit (dof_handler.n_dofs());
   /*}}}*/
 }
 
@@ -435,8 +441,6 @@ template <int spacedim>
 void LaplaceBeltramiProblem<spacedim>::assemble_system ()
 {
   /*{{{*/
-  system_matrix = 0;
-  rhs_matrix = 0;
 
   const QGauss<dim>  quadrature_formula(2*fe.degree);
   FEValues<dim,spacedim> fe_values (mapping, fe, quadrature_formula,
@@ -445,11 +449,14 @@ void LaplaceBeltramiProblem<spacedim>::assemble_system ()
                                     update_quadrature_points   |
                                     update_JxW_values);
 
+  mass_matrix.reinit (sparsity_pattern);
+  laplace_matrix.reinit (sparsity_pattern);
+
   const unsigned int        dofs_per_cell = fe.dofs_per_cell;
   const unsigned int        n_q_points    = quadrature_formula.size();
 
-  FullMatrix<double>        M (dofs_per_cell, dofs_per_cell);
-  FullMatrix<double>        A (dofs_per_cell, dofs_per_cell);
+  FullMatrix<double>        cell_mass_matrix (dofs_per_cell, dofs_per_cell);
+  FullMatrix<double>        cell_laplace_matrix (dofs_per_cell, dofs_per_cell);
 
   std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
 
@@ -458,47 +465,44 @@ void LaplaceBeltramiProblem<spacedim>::assemble_system ()
        endc = dof_handler.end();
        cell!=endc; ++cell)
     {
-      M = 0;
-      A = 0;
+      cell_mass_matrix = 0;
+      cell_laplace_matrix = 0;
 
       fe_values.reinit (cell);
 
       for (unsigned int i=0; i<dofs_per_cell; ++i)
         for (unsigned int j=0; j<dofs_per_cell; ++j)
           for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
-            {
-              M(i,j) += fe_values.shape_grad(i,q_point) *
-                        fe_values.shape_grad(j,q_point) *
-                        fe_values.JxW(q_point);
-              
-              A(i,j) =  fe_values.shape_grad(i,q_point) *
-                        fe_values.shape_grad(j,q_point) *
-                        fe_values.JxW(q_point);          
-            }
+          {
+            cell_mass_matrix(i,j) += fe_values.shape_value(i,q_point) *
+                                     fe_values.shape_value(j,q_point) *
+                                     fe_values.JxW(q_point);
+            cell_laplace_matrix(i,j) += fe_values.shape_grad(i,q_point) *
+                                        fe_values.shape_grad(j,q_point) *
+                                        fe_values.JxW(q_point);
+          }
 
       cell->get_dof_indices (local_dof_indices);
       for (unsigned int i=0; i<dofs_per_cell; ++i)
         {
           for (unsigned int j=0; j<dofs_per_cell; ++j)
           {
-            system_matrix.add (local_dof_indices[i],
-                               local_dof_indices[j],
-                               M(i,j));
-            system_matrix.add (local_dof_indices[i],
-                               local_dof_indices[j],
-                               timestep*theta);
-
-            rhs_matrix.add (local_dof_indices[i],
-                            local_dof_indices[j],
-                            M(i,j));
-            rhs_matrix.add (local_dof_indices[i],
-                            local_dof_indices[j],
-                            timestep*(1.0 - theta)*A(i,j));
+            mass_matrix.add (local_dof_indices[i],
+                             local_dof_indices[j],
+                             cell_mass_matrix(i,j));
+            laplace_matrix.add (local_dof_indices[i],
+                                local_dof_indices[j],
+                                cell_laplace_matrix(i,j));
           }
         }
     }
+  
+  //MatrixCreator::create_mass_matrix(mapping,dof_handler, quadrature_formula, mass_matrix);
+  //MatrixCreator::create_laplace_matrix(mapping,dof_handler, quadrature_formula, laplace_matrix);
 
-
+  old_solution.reinit (dof_handler.n_dofs());
+  solution.reinit (dof_handler.n_dofs());
+  system_rhs.reinit (dof_handler.n_dofs());
 /*}}}*/
 }
 
@@ -529,7 +533,6 @@ void LaplaceBeltramiProblem<spacedim>::run()
 //          template <int spacedim>
 //           void LaplaceBeltramiProblem<spacedim>::run ()
 
-              /*{{{*/
             make_grid_and_dofs();
 
             assemble_system ();
@@ -540,42 +543,58 @@ void LaplaceBeltramiProblem<spacedim>::run()
             //                        empty old_solution,
             //                        empty solution,
             //
+  
+  
 
             // store initial condition in old_solution
+            Vector<double> tmp;
+            tmp.reinit (solution.size());
+            system_matrix.reinit (sparsity_pattern);
+            rhs_matrix.reinit (sparsity_pattern);
             
             VectorTools::interpolate(dof_handler, 
                                      InitialCondition<spacedim>(), 
                                      old_solution);
             
+
             double time = 0.0;
             int step = 0;
-            
-            while (time <= 0.5)
+            solution = old_solution;
+            output_results(step);
+            while (time <= end_time)
             {
-              time += timestep;         
+              time += timestep; step +=1;
               printf("time: %0.8f\n", time);
 
-              // update current rhs: (M - k*theta)*old_solution := system_rhs*old_solution
-              system_rhs = 0;
-              rhs_matrix.vmult(system_rhs,old_solution);
+            
+              //rhs_matrix.reinit (dof_handler.n_dofs());
+              //system_rhs.reinit(solution.size());
+
+              // assemble: [M + timestep*theta*A]*U^n = [M - timestep(1-theta)*A] * U^(n-1)
+              //              system_matrix             rhs_matrix
+              mass_matrix.vmult(system_rhs, old_solution);
+              laplace_matrix.vmult(tmp, old_solution);
+              system_rhs.add( -(1-theta) * timestep, tmp);
+
+              system_matrix.copy_from(mass_matrix);
+              system_matrix.add(theta*timestep,laplace_matrix);
 
               SolverControl solver_control (solution.size(), 1e-7 );
               SolverCG<> cg (solver_control);
 
-              PreconditionSSOR<> preconditioner;
-              preconditioner.initialize(system_matrix, 1.0);
+              //PreconditionSSOR<> preconditioner;
+              //preconditioner.initialize(system_matrix, 1.2);
 
               // equation: system_matrix*solution = system_rhs
-              cg.solve(system_matrix, solution, system_rhs, preconditioner);
+              cg.solve(system_matrix, solution, system_rhs, PreconditionIdentity());
               
               // update solution
               old_solution = solution;
               
-              output_results (step);
-              step +=1;
+              output_results(step);
               
-              /*}}}*/
             }                                                                                 
+ /*}}}*/
 }                                                                                              
 
 int main ()
@@ -585,10 +604,12 @@ int main ()
       using namespace dealii;
 
       LaplaceBeltramiProblem<3> laplace_beltrami;
-      double timestep = 0.0001;
+      double timestep = 0.01;
       double theta    = 0.5;
+      double end_time = 20;
       laplace_beltrami.set_timestep(timestep);
       laplace_beltrami.set_theta(theta);
+      laplace_beltrami.set_end_time(end_time);
       laplace_beltrami.run();
     }
   catch (std::exception &exc)
