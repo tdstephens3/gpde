@@ -1,7 +1,7 @@
 /* ---------------------------------------------------------------------
  *
- * laplace_on_ellipsoid.cc_
- modified from step-38 and step-26 of the tutorial    August 9, 2016
+ * ellipsoid_mean_curvature_flow.cc
+ modified from step-38 and step-26 of the tutorial    August 13, 2016
 
  Purpose: to generate a grid using dealii tools, modify it according to a
  smooth function, and then attach a manifold to it.
@@ -47,6 +47,7 @@
 #include <deal.II/dofs/dof_accessor.h>
 #include <deal.II/dofs/dof_tools.h>
 #include <deal.II/fe/fe_values.h>
+#include <deal.II/fe/fe_nothing.h>
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/vector_tools.h>
 #include <deal.II/numerics/matrix_tools.h>
@@ -119,6 +120,10 @@ public:
   LaplaceBeltramiProblem (const unsigned degree = 2);
   
   void run ();
+  
+  double surface_area();
+  double volume();
+  
   void set_timestep(double &timestep);
   void set_theta(double theta);
   void set_end_time(double end_time);
@@ -148,6 +153,9 @@ private:
   Vector<double>                 solution;
   Vector<double>                 old_solution;
   
+  std::vector<double>                 surface_area_at_timestep;
+  std::vector<double>                 volume_at_timestep;
+  
   double timestep;
   double theta;
   double end_time;
@@ -162,6 +170,66 @@ LaplaceBeltramiProblem<spacedim>::LaplaceBeltramiProblem (const unsigned degree)
   dof_handler(triangulation),
   mapping (degree)
 {}
+
+template<int spacedim>
+double LaplaceBeltramiProblem<spacedim>::surface_area()
+{
+/*{{{*/
+  double surface_area = GridTools::volume(triangulation,mapping);
+  return surface_area;
+/*}}}*/
+}
+
+template<int spacedim>
+double LaplaceBeltramiProblem<spacedim>::volume()
+{
+/*{{{*/
+  
+  // initialize an appropriate quadrature formula
+  const QGauss<dim> quadrature_formula (mapping.get_degree() + 1);
+  const unsigned int n_q_points = quadrature_formula.size();
+  
+  // we really want the JxW values from the FEValues object, but it
+  // wants a finite element. create a cheap element as a dummy
+  // element
+  FE_Nothing<dim,spacedim> dummy_fe;
+  FEValues<dim,spacedim> fe_values (mapping, dummy_fe, quadrature_formula,
+                                    update_JxW_values | update_normal_vectors);
+  
+  typename Triangulation<dim,spacedim>::active_cell_iterator
+  cell = triangulation.begin_active(),
+  endc = triangulation.end();
+   
+  double cell_area = 0;
+  double volume = 0;
+  
+  // compute the integral quantities by quadrature
+  for (; cell!=endc; ++cell)
+  {
+    fe_values.reinit (cell);
+    Point<spacedim> sum_of_verts(0.0,0.0,0.0);
+    Point<spacedim> center_point;
+    
+    for (int v=0; v<4; ++v)
+      sum_of_verts += cell->vertex(v);
+    center_point = sum_of_verts/4.0;
+    
+    //Tensor<1,spacedim> q_normal({0,0,0});
+    //Tensor<1,spacedim> unit_normal;
+    Point<spacedim> q_normal(0,0,0);
+    Point<spacedim> unit_normal;
+    cell_area = 0;
+    for (unsigned int q=0; q<n_q_points; ++q)
+    {
+      q_normal  += fe_values.normal_vector(q);
+      cell_area += fe_values.JxW(q);
+    }
+    unit_normal = -q_normal/n_q_points; 
+    volume += cell_area*center_point*unit_normal;
+  }
+  return (1.0/3.0)*volume;
+/*}}}*/
+}
 
 template<int spacedim>
 void LaplaceBeltramiProblem<spacedim>::set_timestep(double &timestep) 
@@ -182,13 +250,44 @@ void LaplaceBeltramiProblem<spacedim>::set_end_time(double end_time)
 }
 
 template <int spacedim>
+class Identity : public Function<spacedim>
+{
+/*{{{*/
+  public:
+    Identity() : Function<spacedim>() {}
+    
+    virtual void vector_value (const Point<spacedim> &p, Vector<double> &value) const;
+    virtual double value (const Point<spacedim> &p, const unsigned int component = 0) const;
+/*}}}*/
+};
+
+template<int spacedim>
+double Identity<spacedim>::value(const Point<spacedim> &p, const unsigned int component)  const
+{
+  /*{{{*/
+  return p(component);
+  /*}}}*/
+}
+
+template<int spacedim>
+void Identity<spacedim>::vector_value(const Point<spacedim> &p, Vector<double> &value) const
+{
+  /*{{{*/
+  for (unsigned int c=0; c<this->n_components; ++c) 
+  {
+    value(c) = Identity<spacedim>::value(p,c);
+  }
+  /*}}}*/
+}
+
+template <int spacedim>
 class InitialCondition : public Function<spacedim>
 {
 /*{{{*/
   public:
     InitialCondition() : Function<spacedim>() {}
     
-    virtual double value (const Point<spacedim> &p, const unsigned int component = 0) const;
+    double value (const Point<spacedim> &p, const unsigned int component = 0) const;
 /*}}}*/
 };
 
@@ -204,8 +303,9 @@ template <int spacedim>
 void LaplaceBeltramiProblem<spacedim>::make_grid_and_dofs ()
 {
   /*{{{*/
-  double a = 1.0; double b = 1.0; double c = 1.0;
-  static Ellipsoid<dim,spacedim> ellipsoid(a,b,c);
+  double a = 1.0; double b = 2.0; double c = 3.0;
+  Point<spacedim> center(0,0,0);
+  static Ellipsoid<dim,spacedim> ellipsoid(a,b,c,center);
 
   GridGenerator::hyper_sphere(triangulation,Point<spacedim>(0,0,0), 1.0);
   triangulation.set_all_manifold_ids(0);
@@ -214,7 +314,7 @@ void LaplaceBeltramiProblem<spacedim>::make_grid_and_dofs ()
                                        triangulation);
 
   triangulation.set_manifold (0, ellipsoid);
-  triangulation.refine_global(5);
+  triangulation.refine_global(2);
 
   std::cout << "Surface mesh has " << triangulation.n_active_cells()
             << " cells."
@@ -244,8 +344,10 @@ void LaplaceBeltramiProblem<spacedim>::assemble_system ()
   FEValues<dim,spacedim> fe_values (mapping, fe, quadrature_formula,
                                     update_values              |
                                     update_gradients           |
+                                    update_normal_vectors      |
                                     update_quadrature_points   |
                                     update_JxW_values);
+
 
   mass_matrix.reinit (sparsity_pattern);
   laplace_matrix.reinit (sparsity_pattern);
@@ -304,6 +406,13 @@ void LaplaceBeltramiProblem<spacedim>::assemble_system ()
 /*}}}*/
 }
 
+//template <int spacedim>
+//void LaplaceBeltramiProblem<spacedim>::move_vertices ()
+//{
+///*{{{*/
+///*}}}*/
+//}
+
 template <int spacedim>
 void LaplaceBeltramiProblem<spacedim>::output_results (int &step) const
 {
@@ -311,18 +420,16 @@ void LaplaceBeltramiProblem<spacedim>::output_results (int &step) const
   DataOut<dim,DoFHandler<dim,spacedim> > data_out;
   data_out.attach_dof_handler (dof_handler);
   data_out.add_data_vector (solution,
-                            "ellipsoid_solution",
+                            "mean_curvature",
                             DataOut<dim,DoFHandler<dim,spacedim> >::type_dof_data);
-  data_out.build_patches (mapping,
-                          mapping.get_degree());
+  data_out.build_patches (mapping, mapping.get_degree());
 
-  std::string filename ("data/ellipsoid_solution-" + Utilities::int_to_string(step, 5));
+  std::string filename ("data/mean_curvature-" + Utilities::int_to_string(step, 5));
   filename += ".vtk";
   std::ofstream output (filename.c_str());
   data_out.write_vtk (output);
   /*}}}*/
 }
-
 
 template<int spacedim>                                                                              
 void LaplaceBeltramiProblem<spacedim>::run() 
@@ -341,14 +448,24 @@ void LaplaceBeltramiProblem<spacedim>::run()
             system_matrix.reinit (sparsity_pattern);
             rhs_matrix.reinit (sparsity_pattern);
             
+            //VectorTools::interpolate(dof_handler, 
+            //                         InitialCondition<spacedim>(), 
+            //                         old_solution);
+            
             VectorTools::interpolate(dof_handler, 
-                                     InitialCondition<spacedim>(), 
+                                     Identity<spacedim>(), 
                                      old_solution);
+            
             
             double time = 0.0;
             int step = 0;
             solution = old_solution;
 
+            surface_area_at_timestep.push_back(surface_area());
+            printf("surface area: %0.5f\n", surface_area());
+            
+            volume_at_timestep.push_back(volume());
+            printf("volume: %0.5f\n", volume());
             output_results(step);
             
             while (time <= end_time)
@@ -378,6 +495,10 @@ void LaplaceBeltramiProblem<spacedim>::run()
               // equation: system_matrix*solution = system_rhs
               cg.solve(system_matrix, solution, system_rhs, PreconditionIdentity());
               
+              surface_area_at_timestep.push_back(surface_area());
+              printf("surface area: %0.5f\n", surface_area());
+              volume_at_timestep.push_back(volume());
+              printf("volume: %0.5f\n", volume());
               output_results(step);
               
               // update solution
