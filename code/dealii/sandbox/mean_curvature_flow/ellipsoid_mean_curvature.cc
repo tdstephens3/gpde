@@ -100,6 +100,8 @@ class Identity : public Function<spacedim>
   public:
     Identity() : Function<spacedim>() {}
     
+    virtual void vector_value_list (const std::vector<Point<spacedim> > &points,
+                                            std::vector<Vector<double> >   &value_list) const;
     virtual void vector_value (const Point<spacedim> &p, Vector<double> &value) const;
     virtual double value (const Point<spacedim> &p, const unsigned int component = 0) const;
 /*}}}*/
@@ -122,6 +124,18 @@ void Identity<spacedim>::vector_value(const Point<spacedim> &p, Vector<double> &
     value(c) = Identity<spacedim>::value(p,c);
   }
   /*}}}*/
+}
+
+template <int spacedim>
+void Identity<spacedim>::vector_value_list (const std::vector<Point<spacedim> > &points,
+                                            std::vector<Vector<double> >   &value_list) const
+{
+  Assert (value_list.size() == points.size(),
+          ExcDimensionMismatch (value_list.size(), points.size()));
+  const unsigned int n_points = points.size();
+  for (unsigned int p=0; p<n_points; ++p)
+    Identity<spacedim>::vector_value (points[p],
+                                      value_list[p]);
 }
 
 int main ()
@@ -170,14 +184,14 @@ int main ()
 
 
   
-  BlockVector<double> identity_on_manifold(3, dof_handler.n_dofs());
+  Vector<double> identity_on_manifold(dof_handler.n_dofs());
   //DoFRenumbering::component_wise (dof_handler);
   std::cout << "block vector vec.size():  " << identity_on_manifold.size() << std::endl;
   std::cout << "dof.n_dofs():  " << dof_handler.n_dofs() << std::endl;
-  VectorTools::interpolate(mapping, dof_handler, 
-                           Identity<spacedim>(), 
-                           identity_on_manifold);
-  std::cout << "interpolated function onto dofs " << std::endl;
+  //VectorTools::interpolate(mapping, dof_handler, 
+  //                         Identity<spacedim>(), 
+  //                         identity_on_manifold);
+  //std::cout << "interpolated function onto dofs " << std::endl;
 
 
 
@@ -202,16 +216,22 @@ int main ()
        cell = dof_handler.begin_active(),
        endc = dof_handler.end();
        cell!=endc; ++cell)
-    {
+  {
       fe_values.reinit (cell);
 
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+      {
         for (unsigned int i=0; i<dofs_per_cell; ++i) 
         {
           Tensor<1,spacedim> shape_grad = fe_values.shape_grad(i,q_point);
           std::cout << shape_grad << std::endl;
+          printf("dof: %d \n",i);
         }
-    }
+        printf("q_point: %d \n",q_point);
+      }
+  }
+
+
   
   
   
