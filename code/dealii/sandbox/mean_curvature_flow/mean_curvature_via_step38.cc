@@ -182,11 +182,11 @@ LaplaceBeltramiProblem<spacedim>::LaplaceBeltramiProblem (const unsigned degree)
 template <int spacedim>
 void LaplaceBeltramiProblem<spacedim>::make_grid_and_dofs ()
 {
-  double a = 1; double b = 1; double c = 1;
+  double a = 1; double b = 2; double c = 3;
   Point<spacedim> center(0,0,0);
   static Ellipsoid<dim,spacedim> ellipsoid(a,b,c,center);
 
-  GridGenerator::hyper_sphere(triangulation,Point<spacedim>(0,0,0), a);
+  GridGenerator::hyper_sphere(triangulation,center, 1);
   
   triangulation.set_all_manifold_ids(0);
   
@@ -264,6 +264,7 @@ void LaplaceBeltramiProblem<spacedim>::assemble_system ()
         for (unsigned int j=0; j<dofs_per_cell; ++j)
           for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
           {
+            
             cell_matrix(i,j) += fe_values.shape_value(i,q_point) *
                                 fe_values.shape_value(j,q_point) *
                                 fe_values.JxW(q_point);
@@ -296,9 +297,6 @@ void LaplaceBeltramiProblem<spacedim>::assemble_system ()
       }
     }
 
-  system_rhs_x.equ(-1.0,system_rhs_x);
-  system_rhs_y.equ(-1.0,system_rhs_y);
-  system_rhs_z.equ(-1.0,system_rhs_z);
 }
 
 
@@ -328,7 +326,6 @@ void LaplaceBeltramiProblem<spacedim>::solve ()
   }
   avg = summ/dof_handler.n_dofs();
   std::cout << "avg mean curvature: " << avg << std::endl;
-  
 }
 
 
