@@ -23,6 +23,7 @@
 #include <deal.II/lac/vector.h>
 #include <deal.II/lac/solver_control.h>
 #include <deal.II/lac/solver_cg.h>
+#include <deal.II/lac/solver_gmres.h>
 #include <deal.II/lac/precondition.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
@@ -110,7 +111,6 @@ class Identity : public Function<spacedim>
     
     virtual Tensor<2,spacedim> shape_grad(const Tensor<1,spacedim> &unit_normal) const;
     virtual Tensor<1,spacedim> shape_grad_component(const Tensor<1,spacedim> &unit_normal, const unsigned int component) const;
-    virtual ~Identity() {}
 /*}}}*/
 };
 
@@ -179,9 +179,6 @@ int main ()
   using namespace dealii;
   /*{{{*/
   
-  //BlockVector<double> mean_curvature;
-
-
   ///////////// mesh and geometry ///////////////
   const int dim = 2; const int spacedim = 3;
   Triangulation<dim,spacedim>    triangulation;
@@ -193,8 +190,8 @@ int main ()
   GridGenerator::hyper_sphere(triangulation,Point<spacedim>(0,0,0), 1.0);
   triangulation.set_all_manifold_ids(0);
   
-  GridTools::transform(std_cxx11::bind(&Ellipsoid<dim,spacedim>::grid_transform, &ellipsoid, std_cxx11::_1),
-                                       triangulation);
+  GridTools::transform(std_cxx11::bind(&Ellipsoid<dim,spacedim>::grid_transform, 
+                       &ellipsoid, std_cxx11::_1), triangulation);
 
   triangulation.set_manifold (0, ellipsoid);
   triangulation.refine_global(2);
@@ -206,8 +203,8 @@ int main ()
 
   ///////////// finite elements ////////////////////////////////
   const int fe_degree = 2;
-  DoFHandler<dim,spacedim>  dof_handler(triangulation);
   FESystem<dim,spacedim> fe( FE_Q<dim,spacedim>(fe_degree), spacedim);
+  DoFHandler<dim,spacedim>  dof_handler(triangulation);
   MappingQGeneric<dim, spacedim> mapping(fe_degree);
   
   // vector-valued function on manifold //
@@ -215,14 +212,13 @@ int main ()
   Identity<spacedim> identity_on_manifold;
   
 
-  const unsigned int n_dofs = dof_handler.n_dofs();
   dof_handler.distribute_dofs (fe);
   DynamicSparsityPattern dsp (dof_handler.n_dofs(), dof_handler.n_dofs());
   DoFTools::make_sparsity_pattern (dof_handler, dsp);
   SparsityPattern sparsity_pattern;
   sparsity_pattern.copy_from (dsp);
 
-  const QGauss<dim>  quadrature_formula(2*fe.degree);
+  const QGauss<dim>  quadrature_formula(1+fe.degree);
   FEValues<dim,spacedim> fe_values (mapping, fe, quadrature_formula,
                                     update_quadrature_points   |
                                     update_normal_vectors      |
@@ -236,37 +232,36 @@ int main ()
   std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
   
   /// matrices, vectors, and scalars ///
-  const unsigned int comps = 3;
-  const unsigned int comp_x = 0;
-  const unsigned int comp_y = 1;
-  const unsigned int comp_z = 2;
   FullMatrix<double>             cell_mass_matrix(dofs_per_cell, dofs_per_cell);
+  Vector<double>                 cell_rhs_x(dofs_per_cell);
+  Vector<double>                 cell_rhs_y(dofs_per_cell);
+  Vector<double>                 cell_rhs_z(dofs_per_cell);
+  
   SparseMatrix<double>           mass_matrix;
-  FullMatrix<double>             cell_rhs(dofs_per_cell,comps);
-//  Vector<double>                 cell_rhs_x(dofs_per_cell);
-//  Vector<double>                 cell_rhs_y(dofs_per_cell);
-//  Vector<double>                 cell_rhs_z(dofs_per_cell);
   Vector<double>                 system_rhs_x;
   Vector<double>                 system_rhs_y;
   Vector<double>                 system_rhs_z;
-  Vector<double>                 mean_curvature_vector;
+  
+  Vector<double>                 mean_curvature_x;
+  Vector<double>                 mean_curvature_y;
+  Vector<double>                 mean_curvature_z;
   Vector<double>                 mean_curvature_squared;
 
   mass_matrix.reinit (sparsity_pattern);
   system_rhs_x.reinit(dof_handler.n_dofs());
   system_rhs_y.reinit(dof_handler.n_dofs());
   system_rhs_z.reinit(dof_handler.n_dofs());
-
-  for (typename DoFHandler<dim,spacedim>::active_cell_iterator
-       cell = dof_handler.begin_active(),
-       endc = dof_handler.end();
-       cell!=endc; ++cell)
+  
+  typename DoFHandler<dim,spacedim>::active_cell_iterator cell = dof_handler.begin_active();
+  for (; cell!=dof_handler.end(); ++cell)
   {
     cell_mass_matrix = 0;
-    cell_rhs = 0;
-
+    cell_rhs_x = 0;
+    cell_rhs_y = 0;
+    cell_rhs_z = 0;
     fe_values.reinit (cell);
 
+    // create lhs mass matrix, (k*nu, v)_ij
     for (unsigned int i=0; i<dofs_per_cell; ++i)
       for (unsigned int j=0; j<dofs_per_cell; ++j)
         for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
@@ -275,54 +270,88 @@ int main ()
                                    fe_values.shape_value(j,q_point) *
                                    fe_values.JxW(q_point);
         }
-    
+    // create rhs vector, (nabla_X id_X, nabla_X v)_i := \int nabla_X id_X : nabla_X v
     for (unsigned int i=0; i<dofs_per_cell; ++i)
-      for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
-        for (unsigned int comp=0; comp<comps; ++comp)
-          cell_rhs(i,comp) += fe_values.shape_grad(i,q_point)*
-                              identity_on_manifold.shape_grad_component(fe_values.normal_vector(q_point),comp)*
-                              fe_values.JxW(q_point);
-    
-    std::cout << "cell matrices and vectors have been set" << std::endl;
+      for (unsigned int q_point=0; q_point<n_q_points; ++q_point) 
+      {
+        cell_rhs_x(i) += fe_values.shape_grad_component(i,q_point,0)*
+                         identity_on_manifold.shape_grad_component(fe_values.normal_vector(q_point),0)* 
+                         fe_values.JxW(q_point);
+        cell_rhs_y(i) += fe_values.shape_grad_component(i,q_point,1)*
+                         identity_on_manifold.shape_grad_component(fe_values.normal_vector(q_point),1)* 
+                         fe_values.JxW(q_point);
+        cell_rhs_z(i) += fe_values.shape_grad_component(i,q_point,2)*
+                         identity_on_manifold.shape_grad_component(fe_values.normal_vector(q_point),2)* 
+                         fe_values.JxW(q_point);
+      }
     cell->get_dof_indices (local_dof_indices);
     for (unsigned int i=0; i<dofs_per_cell; ++i)
     {
+      system_rhs_x(local_dof_indices[i]) += cell_rhs_x(i);
+      system_rhs_y(local_dof_indices[i]) += cell_rhs_y(i);
+      system_rhs_z(local_dof_indices[i]) += cell_rhs_z(i);
+      
       for (unsigned int j=0; j<dofs_per_cell; ++j)
         mass_matrix.add (local_dof_indices[i],
                          local_dof_indices[j],
                          cell_mass_matrix(i,j));
-      system_rhs_x(local_dof_indices[i]) += cell_rhs(i,comp_x);
-      system_rhs_y(local_dof_indices[i]) += cell_rhs(i,comp_y);
-      system_rhs_z(local_dof_indices[i]) += cell_rhs(i,comp_z);
     }
   }
 
-  std::cout << "system has been set up" << std::endl;
-//  /// solve mean_curvature_vector = inverse_mass_matrix * system_rhs
-//  SolverControl solver_control (mean_curvature_vector.size(), 1e-7 );
-//  SolverCG<> cg_solver (solver_control);
-//  const auto inverse_mass_matrix = inverse_operator(linear_operator(mass_matrix),
-//                                                    cg_solver,    
-//                                                    PreconditionIdentity());
-//  inverse_mass_matrix.vmult(mean_curvature_vector,system_rhs);
-//
-//  mean_curvature_squared = mean_curvature_vector*mean_curvature_vector;
-//  // output results
-//  
-//  //output_results();
-//  DataOut<dim,DoFHandler<dim,spacedim> > data_out;
-//  data_out.attach_dof_handler (dof_handler);
-//  data_out.add_data_vector (mean_curvature_squared,
-//                            "mean_curvature_squared",
-//                            DataOut<dim,DoFHandler<dim,spacedim> >::type_dof_data);
-//  data_out.build_patches (mapping,
-//                          mapping.get_degree());
-//
-//  std::string filename ("mean_curv_squared-");
-//  filename += static_cast<char>('0'+spacedim);
-//  filename += "d.vtk";
-//  std::ofstream output (filename.c_str());
-//  data_out.write_vtk (output);
+  system_rhs_x.equ(-1.0,system_rhs_x);
+  system_rhs_y.equ(-1.0,system_rhs_y);
+  system_rhs_z.equ(-1.0,system_rhs_z);
+  /// solve   mass_matrix * mean_curvature_vector = - system_rhs_vector   for mean_curvature_vector
+  
+  SolverControl solver_control (mean_curvature_x.size(), 1e-7*system_rhs_x.l2_norm(),true);
+  SolverCG<> cg_solver (solver_control);
+  
+  mean_curvature_x.reinit(dof_handler.n_dofs());
+  mean_curvature_y.reinit(dof_handler.n_dofs());
+  mean_curvature_z.reinit(dof_handler.n_dofs());
+  
+  cg_solver.solve(mass_matrix, 
+                  mean_curvature_x, 
+                  system_rhs_x, 
+                  PreconditionIdentity());
+  cg_solver.solve(mass_matrix, 
+                  mean_curvature_y, 
+                  system_rhs_y, 
+                  PreconditionIdentity());
+  cg_solver.solve(mass_matrix, 
+                  mean_curvature_z, 
+                  system_rhs_z, 
+                  PreconditionIdentity());
+  
+  double summ = 0;
+  double comp_squared = 0;
+  mean_curvature_squared.reinit(dof_handler.n_dofs());
+  mean_curvature_squared = 0;
+  for (size_t i=0; i< dof_handler.n_dofs(); ++i) 
+  {
+    mean_curvature_squared(i) = pow(mean_curvature_x(i),2) + pow(mean_curvature_y(i),2) + pow(mean_curvature_z(i),2);
+    summ += mean_curvature_squared(i);
+    //printf("mean_curv_x,y,z: %0.12f, %0.12f, %0.12f\n",mean_curvature_x(i),mean_curvature_y(i), mean_curvature_z(i));
+    //printf("%0.12f\n",mean_curvature_squared(i));
+    //printf("%0.12f\n",mean_curvature_squared(i));
+  }
+  
+  double avg = summ/dof_handler.n_dofs();
+  std::cout << "avg curvature: " << avg << std::endl;
+  
+  DataOut<dim,DoFHandler<dim,spacedim> > data_out;
+  data_out.attach_dof_handler (dof_handler);
+  data_out.add_data_vector (mean_curvature_squared,
+                            "solution",
+                            DataOut<dim,DoFHandler<dim,spacedim> >::type_dof_data);
+  data_out.build_patches (mapping,
+                          mapping.get_degree());
+
+  std::string filename ("solution-");
+  filename += static_cast<char>('0'+spacedim);
+  filename += "d.vtk";
+  std::ofstream output (filename.c_str());
+  data_out.write_vtk (output);
   
   /*}}}*/
   return 0;
