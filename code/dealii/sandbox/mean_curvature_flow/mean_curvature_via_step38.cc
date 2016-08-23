@@ -1,5 +1,9 @@
 /* ---------------------------------------------------------------------
  *
+ * mean_curvature_via_step38.cc
+ *
+ *  MODIFIED VERSION OF STEP-38, TOM STEPHENS, August 2016
+ *
  * Copyright (C) 2010 - 2015 by the deal.II authors
  *
  * This file is part of the deal.II library.
@@ -57,40 +61,41 @@ namespace Step38
 template <int spacedim>
 class LaplaceBeltramiProblem
 {
-public:
-  LaplaceBeltramiProblem (const unsigned degree = 2);
-  void run ();
-
-private:
-  static const unsigned int dim = spacedim-1;
-
-  void make_grid_and_dofs ();
-  void assemble_system ();
-  void solve ();
-  void output_results () const;
-  void compute_error () const;
-
-
-  Triangulation<dim,spacedim>   triangulation;
-  FE_Q<dim,spacedim>            fe; 
-  double                        degree = 2;
-  DoFHandler<dim,spacedim>      dof_handler;
-  MappingQ<dim, spacedim>       mapping;
-
-  SparsityPattern               sparsity_pattern;
-  SparseMatrix<double>          system_matrix;
-
-  Vector<double>                solution_x;
-  Vector<double>                solution_y;
-  Vector<double>                solution_z;
-  Vector<double>                system_rhs_x;
-  Vector<double>                system_rhs_y;
-  Vector<double>                system_rhs_z;
+  /*{{{*/
+  public:
+    LaplaceBeltramiProblem (const unsigned degree = 2);
+    void run ();
   
-  Vector<double>                mean_curvature_squared;
+  private:
+    static const unsigned int dim = spacedim-1;
+  
+    void make_grid_and_dofs (double,double,double,Point<spacedim>);
+    void assemble_system ();
+    void solve ();
+    void output_results () const;
+    void compute_error (double,double,double,Point<3>) const;
+  
+  
+    Triangulation<dim,spacedim>   triangulation;
+    FE_Q<dim,spacedim>            fe; 
+    double                        degree = 2;
+    DoFHandler<dim,spacedim>      dof_handler;
+    MappingQ<dim, spacedim>       mapping;
+  
+    SparsityPattern               sparsity_pattern;
+    SparseMatrix<double>          system_matrix;
+  
+    Vector<double>                solution_x;
+    Vector<double>                solution_y;
+    Vector<double>                solution_z;
+    Vector<double>                system_rhs_x;
+    Vector<double>                system_rhs_y;
+    Vector<double>                system_rhs_z;
+    
+    Vector<double>                mean_curvature_squared;
+    Vector<double>                exact_solution_values;
+    /*}}}*/
 };
-
-
 
 template <int spacedim>
 class Identity : public Function<spacedim>
@@ -170,6 +175,56 @@ Tensor<1,spacedim> Identity<spacedim>::shape_grad_component(const Tensor<1,space
 }
 
 
+// Next, let us define the classes that describe the exact solution and the
+// right hand sides of the problem. This is in analogy to step-4 and step-7
+// where we also defined such objects. Given the discussion in the
+// introduction, the actual formulas should be self-explanatory. A point of
+// interest may be how we define the value and gradient functions for the 2d
+// and 3d cases separately, using explicit specializations of the general
+// template. An alternative to doing it this way might have been to define
+// the general template and have a <code>switch</code> statement (or a
+// sequence of <code>if</code>s) for each possible value of the spatial
+// dimension.
+template <int spacedim>
+class ExactSolution : public Function<spacedim>
+{
+  /*{{{*/
+  public:
+    ExactSolution<spacedim> (double a,double b, double c, Point<3> center) 
+      : Function<spacedim>(), a(a),b(b),c(c),center(center),ellipsoid(a,b,c,center)  {}
+  
+    virtual double value (const Point<3>   &p,
+                          const unsigned int  component = 0) const;
+  private:
+    double a,b,c;
+    Point<3> center;
+    Ellipsoid<2,3> ellipsoid;
+    /*}}}*/
+};
+
+template <int spacedim>
+double ExactSolution<spacedim>::value (const Point<3> &p,
+                             const unsigned int) const
+{
+  /*{{{*/
+  Point<3> chart_point = ellipsoid.pull_back(p);
+  
+  double theta = chart_point(1);
+  double phi   = chart_point(2);
+
+  double mean_curv = 2*a*b*c*( 3*(pow(a,2) + pow(b,2)) + 2*pow(c,2) 
+                               + (pow(a,2) + pow(b,2) - 2*pow(c,2))*cos(2*theta) 
+                              - 2*(pow(a,2) - pow(b,2))*cos(2*phi)*pow(sin(theta),2) ) 
+                           / ( 8*pow((pow(a,2)*pow(b,2)*pow(cos(theta),2)
+                                + pow(c,2)*(pow(b,2)*pow(cos(phi),2) 
+                                + pow(a,2)*pow(sin(phi),2))*pow(sin(theta),2)),1.5) );
+  
+  double mean_curv_squared = pow(mean_curv,2);
+  return mean_curv_squared;
+  /*}}}*/
+}
+
+  
 template <int spacedim>
 LaplaceBeltramiProblem<spacedim>::LaplaceBeltramiProblem (const unsigned degree)
   :
@@ -180,10 +235,9 @@ LaplaceBeltramiProblem<spacedim>::LaplaceBeltramiProblem (const unsigned degree)
 
 
 template <int spacedim>
-void LaplaceBeltramiProblem<spacedim>::make_grid_and_dofs ()
+void LaplaceBeltramiProblem<spacedim>::make_grid_and_dofs (double a, double b, double c, Point<spacedim> center)
 {
-  double a = 1; double b = 2; double c = 3;
-  Point<spacedim> center(0,0,0);
+  /*{{{*/
   static Ellipsoid<dim,spacedim> ellipsoid(a,b,c,center);
 
   GridGenerator::hyper_sphere(triangulation,center, 1);
@@ -194,7 +248,7 @@ void LaplaceBeltramiProblem<spacedim>::make_grid_and_dofs ()
                        triangulation);
 
   triangulation.set_manifold (0, ellipsoid);
-  triangulation.refine_global(4);
+  triangulation.refine_global(3);
 
   std::cout << "Surface mesh has " << triangulation.n_active_cells()
             << " cells."
@@ -218,11 +272,13 @@ void LaplaceBeltramiProblem<spacedim>::make_grid_and_dofs ()
   system_rhs_x.reinit (dof_handler.n_dofs());
   system_rhs_y.reinit (dof_handler.n_dofs());
   system_rhs_z.reinit (dof_handler.n_dofs());
+  /*}}}*/
 }
 
 template <int spacedim>
 void LaplaceBeltramiProblem<spacedim>::assemble_system ()
 {
+  /*{{{*/
   system_matrix = 0;
   system_rhs_x  = 0;
   system_rhs_y  = 0;
@@ -237,6 +293,7 @@ void LaplaceBeltramiProblem<spacedim>::assemble_system ()
                                     update_gradients           |
                                     update_quadrature_points   |
                                     update_JxW_values);
+
 
   const unsigned int  dofs_per_cell = fe.dofs_per_cell;
   const unsigned int  n_q_points    = quadrature_formula.size();
@@ -296,20 +353,17 @@ void LaplaceBeltramiProblem<spacedim>::assemble_system ()
         system_rhs_z(local_dof_indices[i]) += cell_rhs_z(i);
       }
     }
-
+  /*}}}*/
 }
-
-
 
 template <int spacedim>
 void LaplaceBeltramiProblem<spacedim>::solve ()
 {
+  /*{{{*/
   SolverControl solver_control (solution_x.size(), 1e-12 );
   SolverCG<>    cg (solver_control);
-  SolverGMRES<> gmres (solver_control);
 
 
-  //cg.solve (system_matrix, solution_x, system_rhs_x, preconditioner);
   cg.solve (system_matrix, solution_x, system_rhs_x, PreconditionIdentity());
   std::cout << "Solved x component" << std::endl;
   cg.solve (system_matrix, solution_y, system_rhs_y, PreconditionIdentity());
@@ -318,6 +372,7 @@ void LaplaceBeltramiProblem<spacedim>::solve ()
   std::cout << "Solved z component" << std::endl;
 
   mean_curvature_squared.reinit (dof_handler.n_dofs());
+  
   double avg = 0; double summ = 0;
   for (unsigned int i=0; i<dof_handler.n_dofs(); ++i )
   {
@@ -326,46 +381,103 @@ void LaplaceBeltramiProblem<spacedim>::solve ()
   }
   avg = summ/dof_handler.n_dofs();
   std::cout << "avg mean curvature: " << avg << std::endl;
+  /*}}}*/
 }
-
-
 
 template <int spacedim>
 void LaplaceBeltramiProblem<spacedim>::output_results () const
 {
+  /*{{{*/
   DataOut<dim,DoFHandler<dim,spacedim> > data_out;
   data_out.attach_dof_handler (dof_handler);
   data_out.add_data_vector (mean_curvature_squared,
-                            "solution",
+                            "computed_mean_curvature_squared",
+                            DataOut<dim,DoFHandler<dim,spacedim> >::type_dof_data);
+
+
+  data_out.add_data_vector (exact_solution_values,
+                            "exact_solution",
                             DataOut<dim,DoFHandler<dim,spacedim> >::type_dof_data);
   data_out.build_patches (mapping,
                           mapping.get_degree());
 
-  std::string filename ("solution-");
+  std::string filename ("./data/mean_curvature_squared-");
   filename += static_cast<char>('0'+spacedim);
   filename += "d.vtk";
   std::ofstream output (filename.c_str());
   data_out.write_vtk (output);
+  /*}}}*/
 }
 
-  template <int spacedim>
-  void LaplaceBeltramiProblem<spacedim>::run ()
-  {
-    make_grid_and_dofs();
-    std::cout << "grid and dofs made " << std::endl;
-    assemble_system ();
-    std::cout << "system assembled " << std::endl;
-    solve ();
-    std::cout << "solved " << std::endl;
-    output_results ();
-    std::cout << "results written" << std::endl;
-  }
+// @sect4{LaplaceBeltramiProblem::compute_error}
+
+// This is the last piece of functionality: we want to compute the error in
+// the numerical solution. It is a verbatim copy of the code previously
+// shown and discussed in step-7. As mentioned in the introduction, the
+// <code>Solution</code> class provides the (tangential) gradient of the
+// solution. To avoid evaluating the error only a superconvergence points,
+// we choose a quadrature rule of sufficiently high order.
+template <int spacedim>
+void LaplaceBeltramiProblem<spacedim>::compute_error (double a, double b, double c, Point<3> center) const
+{
+  /*{{{*/
+  Vector<float> difference_per_cell_L2 (triangulation.n_active_cells());
+  VectorTools::integrate_difference (mapping, dof_handler, mean_curvature_squared,
+                                     ExactSolution<3>(a,b,c,center),
+                                     difference_per_cell_L2,
+                                     QGauss<dim>(2*fe.degree+1),
+                                     VectorTools::L2_norm);
+  
+  Vector<float> difference_per_cell_Linfty (triangulation.n_active_cells());
+  VectorTools::integrate_difference (mapping, dof_handler, mean_curvature_squared,
+                                     ExactSolution<3>(a,b,c,center),
+                                     difference_per_cell_Linfty,
+                                     QGauss<dim>(2*fe.degree+1),
+                                     VectorTools::Linfty_norm);
+
+
+  std::cout << "L2 error = "
+            << difference_per_cell_L2.l2_norm()
+            << std::endl;
+  std::cout << "Linfty error = "
+            << difference_per_cell_Linfty.linfty_norm()
+            << std::endl;
+  /*}}}*/
+}
+
+
+template <int spacedim>
+void LaplaceBeltramiProblem<spacedim>::run ()
+{
+  double a = 1; double b = 1; double c = 1;
+  Point<3> center(0,0,0);
+  
+  make_grid_and_dofs(a,b,c,center);
+  std::cout << "grid and dofs made " << std::endl;
+  
+  assemble_system ();
+  std::cout << "system assembled " << std::endl;
+  
+  solve ();
+  std::cout << "solved " << std::endl;
+  
+                            
+  exact_solution_values.reinit(dof_handler.n_dofs());
+  VectorTools::interpolate(dof_handler, 
+                           ExactSolution<3>(a,b,c,center),
+                           exact_solution_values);
+  output_results ();
+  std::cout << "results written" << std::endl;
+  
+  compute_error(a,b,c,center);
+  std::cout << "error computed" << std::endl;
+}
 
 }
 
 
 int main ()
-
+{
   try
   {
     using namespace dealii;
@@ -390,4 +502,6 @@ int main ()
   catch (...)
     {
       std::cout << "problem! " << std::endl;
+      return 2;
     }
+}

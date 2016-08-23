@@ -149,33 +149,18 @@ Point<dim> Ellipsoid<dim,spacedim>::ellipsoid_pull_back(const Point<spacedim> &s
   y = space_point[1];
   z = space_point[2];
 
-  std::cout << "using a,b,c: " << std::endl;
-  std::cout << a << " " << b << " "  << c << std::endl;
-  std::cout << "from pull_back: " << std::endl;
-  std::cout << "space_point: " << std::endl;
-  std::cout << x << " " << y << " "  << z << std::endl;
 
   // map ellipsoid point onto sphere
   u = x/a;
   v = y/b;
   w = z/c;
 
-  std::cout << "pulls back to : " << std::endl;
-  std::cout << u << " " << v << " "  << w << std::endl;
-  std::cout << "on sphere." << std::endl;
-  
   Point<spacedim> p(u,v,w);
 
   // use reference_sphere's pull_back function
-  Point<spacedim> q = pull_back(p);
+  Point<spacedim> q = SphericalManifold<dim,spacedim>::pull_back(p);
   Point<dim> chart_point;
 
-  
-  std::cout << "sphere pull_back: " << std::endl;
-  std::cout << q[0] << " " << q[1] << " "  << q[2] << std::endl;
-  std::cout << "r theta phi" << std::endl;
-  std::cout << "..........." << std::endl;
- 
   chart_point[0] = q[1];
   chart_point[1] = q[2];
 
@@ -196,7 +181,7 @@ Point<spacedim> Ellipsoid<dim,spacedim>::ellipsoid_push_forward(const Point<dim>
 
   Point<spacedim> p(max_axis,theta,phi);
   // map theta,phi in chart domain onto reference_sphere with radius max_axis
-  Point<spacedim> X = push_forward(p);
+  Point<spacedim> X = SphericalManifold<dim,spacedim>::push_forward(p);
  
   // map point on sphere onto ellipsoid
   

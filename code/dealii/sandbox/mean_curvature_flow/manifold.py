@@ -60,13 +60,14 @@ class Ellipsoid(Manifold):
         #{{{
         a,b,c, = vesicle_params
         
-        #x = a*np.sin(phi)*np.cos(theta)
-        #y = b*np.sin(phi)*np.sin(theta)
+        x = a*np.sin(phi)*np.cos(theta)
+        y = b*np.sin(phi)*np.sin(theta)
+        z = c*np.cos(phi) 
+        
+        #x = a*np.cos(theta)*np.sin(phi)
+        #y = b*np.sin(theta)*np.sin(phi)
         #z = c*np.cos(phi) 
         
-        x = a*np.cos(theta)*np.sin(phi)
-        y = b*np.sin(theta)*np.sin(phi)
-        z = c*np.cos(phi) 
     
         return x,y,z
         #}}}
