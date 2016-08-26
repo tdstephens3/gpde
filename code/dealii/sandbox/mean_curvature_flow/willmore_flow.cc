@@ -85,13 +85,9 @@ class VectorWillmoreFlow
     MappingQ<dim, spacedim>       mapping;
   
     BlockSparsityPattern          sparsity_pattern;
-    BlockSparseMatrix<double>     M;
-    BlockSparseMatrix<double>     L;
-    BlockSparseMatrix<double>     hL;
-    BlockSparseMatrix<double>     d;
-  
-    BlockVector<double>           VH;
-    BlockVector<double>           RHS;
+    BlockSparseMatrix<double>     system_matrix;
+    BlockVector<double>           solution;
+    BlockVector<double>           system_rhs;
     
     Vector<double>                computed_mean_curvature_squared;
     //Vector<double>                exact_mean_curvature_squared;
@@ -256,29 +252,36 @@ void VectorWillmoreFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
             << " degrees of freedom."
             << std::endl;
 
+  /*    [  M    L-hL+d ][ V_n+1 ]   [  0  ]
+   *    |              ||       | = |     |
+   *    [ -L      M    ][ H_n+1 ]   [ rhs ]
+   *
+   *    system_matrix*VH = system_rhs
+   *
+   * 
+   */
+
   BlockDynamicSparsityPattern dsp (2,2);
-  dsp.block(0,0).reinit(dof_handler.n_dofs(),dof_handler.n_dofs());
+  dsp.block(0,0).reinit(dof_handler.n_dofs(),dof_handler.n_dofs());  
   dsp.block(0,1).reinit(dof_handler.n_dofs(),dof_handler.n_dofs());
   dsp.block(1,0).reinit(dof_handler.n_dofs(),dof_handler.n_dofs());
   dsp.block(1,1).reinit(dof_handler.n_dofs(),dof_handler.n_dofs());
   dsp.collect_sizes();
+
   DoFTools::make_sparsity_pattern (dof_handler, dsp);
   sparsity_pattern.copy_from (dsp);
-  
-  M.reinit  (sparsity_pattern);
-  L.reinit  (sparsity_pattern);
-  hL.reinit (sparsity_pattern);
-  d.reinit  (sparsity_pattern);
 
-  VH.reinit(2);
-  VH.block(0).reinit (dof_handler.n_dofs());
-  VH.block(1).reinit (dof_handler.n_dofs());
-  VH.collect_sizes();
+  system_matrix.reinit(sparsity_pattern);
 
-  RHS.reinit(2);
-  RHS.block(0).reinit (dof_handler.n_dofs());
-  RHS.block(1).reinit (dof_handler.n_dofs());
-  RHS.collect_sizes();
+  solution.reinit(2);
+  solution.block(0).reinit (dof_handler.n_dofs());
+  solution.block(1).reinit (dof_handler.n_dofs());
+  solution.collect_sizes();
+
+  system_rhs.reinit(2);
+  system_rhs.block(0).reinit (dof_handler.n_dofs());
+  system_rhs.block(1).reinit (dof_handler.n_dofs());
+  system_rhs.collect_sizes();
  
   /*}}}*/
 }
@@ -329,23 +332,23 @@ void VectorWillmoreFlow<spacedim>::assemble_system ()
           for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
           {
             
-            local_M(i,j)  += fe_values[W].value(i,q_point) *
-                             fe_values[W].value(j,q_point) *
+            local_M(i,j)  += fe_values[W].value(i,q_point)*
+                             fe_values[W].value(j,q_point)*
                              fe_values.JxW(q_point);
             
-            local_L(i,j)  += fe_values[W].gradient(i,q_point) *
-                             fe_values[W].gradient(j,q_point) *
+            local_L(i,j)  += fe_values[W].gradient(i,q_point)*
+                             fe_values[W].gradient(j,q_point)*
                              fe_values.JxW(q_point);
             
-            local_hL(i,j) += fe_values[W].gradient(i,q_point) *
-                             fe_values[W].gradient(j,q_point) *
+            local_hL(i,j) += fe_values[W].gradient(i,q_point)*
+                             fe_values[W].gradient(j,q_point)*
                              fe_values.JxW(q_point);
             local_hL(i)   += scalar_product(identity_on_manifold.shape_grad(fe_values.normal_vector(q_point))*
                                             fe_values[W].gradient(i,q_point),
                                             fe_values[W].gradient(j,q_point)
-                                           )*fe_values.JxW(q_point);
-            local_d(i,j)  += fe_values[W].divergence(i,q_point) *
-                             fe_values[W].divergence(j,q_point) *
+                                           )* fe_values.JxW(q_point);
+            local_d(i,j)  += fe_values[W].divergence(i,q_point)*
+                             fe_values[W].divergence(j,q_point)*
                              fe_values.JxW(q_point);
           }
 
@@ -353,8 +356,8 @@ void VectorWillmoreFlow<spacedim>::assemble_system ()
         for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
         {
           local_rhs(i) += scalar_product(fe_values[curv_components].gradient(i,q_point),
-                                         identity_on_manifold.shape_grad(fe_values.normal_vector(q_point)))* 
-                                         fe_values.JxW(q_point);
+                                         identity_on_manifold.shape_grad(fe_values.normal_vector(q_point))
+                                        )*fe_values.JxW(q_point);
         }
       cell->get_dof_indices (local_dof_indices);
       for (unsigned int i=0; i<dofs_per_cell; ++i)
