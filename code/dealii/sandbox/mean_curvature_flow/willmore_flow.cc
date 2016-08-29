@@ -238,7 +238,7 @@ void VectorWillmoreFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
                        triangulation);
 
   triangulation.set_manifold (0, ellipsoid);
-  triangulation.refine_global(4);
+  triangulation.refine_global(3);
 
   std::cout << "Surface mesh has " << triangulation.n_active_cells()
             << " cells,\n"
@@ -394,7 +394,7 @@ void VectorWillmoreFlow<spacedim>::assemble_system (double zn)
     }
   }
 
-  double kappa = 1e-1;
+  double kappa = 1;
   system_matrix.enter (A00, 0,0,  1);
   system_matrix.enter (A01, 0,1,  kappa*1);
   system_matrix.enter (A10, 1,0,  1);
@@ -462,7 +462,7 @@ template <int spacedim>
 void VectorWillmoreFlow<spacedim>::run ()
 {
   /*{{{*/
-  double a = 1; double b = 1; double c = 2;
+  double a = 1; double b = 2; double c = 3;
   Point<3> center(0,0,0);
   
   make_grid_and_dofs(a,b,c,center);
@@ -471,7 +471,7 @@ void VectorWillmoreFlow<spacedim>::run ()
   double time = 0.0;
   double end_time = 0.01;
   int step = 0;
-  double zn = 0.000001;
+  double zn = 0.00001;
   
             
   while (time <= end_time)
@@ -485,17 +485,17 @@ void VectorWillmoreFlow<spacedim>::run ()
     
     //std::cout << "nonzero rhs: " << system_rhs.block(1) << std::endl;
 
-    SolverControl solver_control (VH.size(), 0.9*system_rhs.block(1).linfty_norm() );
+    SolverControl solver_control (VH.size(), 0.9*system_rhs.block(1).l2_norm() );
     SolverGMRES< BlockVector<double> > gmres (solver_control);
 
     //PreconditionIdentity preconditioner;
     // equation: system_matrix*VH = system_rhs
     gmres.solve(system_matrix, VH, system_rhs, IdentityMatrix(VH.size()));
 
-    std::cout << "system_rhs(0) norm: " << system_rhs.block(0).l2_norm() << std::endl;
-    std::cout << "system_rhs(1) norm: " << system_rhs.block(1).l2_norm() << std::endl;
-    std::cout << "V l2 norm: " << VH.block(0).l2_norm() << std::endl;
-    std::cout << "H l2 norm: " << VH.block(1).l2_norm() << std::endl;
+    std::cout << "system_rhs(0) norm: " << system_rhs.block(0).linfty_norm() << std::endl;
+    std::cout << "system_rhs(1) norm: " << system_rhs.block(1).linfty_norm() << std::endl;
+    std::cout << "V l-infinity norm: " << VH.block(0).linfty_norm() << std::endl;
+    std::cout << "H l-infinity norm: " << VH.block(1).linfty_norm() << std::endl;
 
     move_mesh(zn,VH.block(0));
 
