@@ -38,6 +38,8 @@
 #include <deal.II/lac/solver_gmres.h>
 #include <deal.II/lac/precondition.h>
 #include <deal.II/lac/block_sparse_matrix.h>
+#include <deal.II/lac/block_matrix_array.h>
+#include <deal.II/lac/identity_matrix.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/dofs/dof_handler.h>
@@ -72,9 +74,9 @@ class VectorWillmoreFlow
     static const unsigned int dim = spacedim-1;
   
     void make_grid_and_dofs (double,double,double,Point<spacedim>);
-    void assemble_system ();
-    void solve ();
-    void output_results () const;
+    void assemble_system (double);
+    void move_mesh (double, Vector<double>) const;
+    void output_results (int &step) const;
     //void compute_error (double, double, double, Point<3>) const;
   
   
@@ -84,16 +86,17 @@ class VectorWillmoreFlow
     DoFHandler<dim,spacedim>      dof_handler;
     MappingQ<dim, spacedim>       mapping;
   
-    BlockSparsityPattern          sparsity_pattern;
-    BlockSparseMatrix<double>     system_matrix;
-    BlockVector<double>           solution;
+    SparsityPattern               sparsity_pattern;
+    
+    SparseMatrix<double>          A00,A01,A10,A11;
+    BlockMatrixArray<double>      system_matrix;
+    BlockVector<double>           VH;
     BlockVector<double>           system_rhs;
     
     Vector<double>                computed_mean_curvature_squared;
     //Vector<double>                exact_mean_curvature_squared;
     /*}}}*/
 };
-
 
 template <int spacedim>
 class ComputedMeanCurvatureSquared : public DataPostprocessorScalar<spacedim>
@@ -135,7 +138,6 @@ void ComputedMeanCurvatureSquared<spacedim>::compute_derived_quantities_vector (
     }
 /*}}}*/
 }
-
 
 template <int spacedim>
 class Identity : public Function<spacedim>
@@ -214,7 +216,6 @@ Tensor<1,spacedim> Identity<spacedim>::shape_grad_component(const Tensor<1,space
   /*}}}*/
 }
 
-
 template <int spacedim>
 VectorWillmoreFlow<spacedim>::VectorWillmoreFlow (const unsigned degree)
   :
@@ -222,7 +223,6 @@ VectorWillmoreFlow<spacedim>::VectorWillmoreFlow (const unsigned degree)
   dof_handler(triangulation),
   mapping (degree)
 {}
-
 
 template <int spacedim>
 void VectorWillmoreFlow<spacedim>::make_grid_and_dofs (double a, double b, double c, Point<spacedim> center)
@@ -238,7 +238,7 @@ void VectorWillmoreFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
                        triangulation);
 
   triangulation.set_manifold (0, ellipsoid);
-  triangulation.refine_global(3);
+  triangulation.refine_global(4);
 
   std::cout << "Surface mesh has " << triangulation.n_active_cells()
             << " cells,\n"
@@ -252,33 +252,40 @@ void VectorWillmoreFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
             << " degrees of freedom."
             << std::endl;
 
-  /*    [  M    L-hL+d ][ V_n+1 ]   [  0  ]
-   *    |              ||       | = |     |
-   *    [ -L      M    ][ H_n+1 ]   [ rhs ]
+  /*
+   *    [  M     L-2*hL+0.5*d ][ V_n+1 ]   [  0  ]
+   *    |                     ||       | = |     |
+   *    [ -L           M      ][ H_n+1 ]   [ rhs ]
    *
    *    system_matrix*VH = system_rhs
+   *    
+   *    system_matrix has size 2*n_dofs x 2*n_dofs, 
+   *    each block has size n_dofs x n_dofs, and
+   *    rhs has size n_dofs
    *
-   * 
    */
 
-  BlockDynamicSparsityPattern dsp (2,2);
-  dsp.block(0,0).reinit(dof_handler.n_dofs(),dof_handler.n_dofs());  
-  dsp.block(0,1).reinit(dof_handler.n_dofs(),dof_handler.n_dofs());
-  dsp.block(1,0).reinit(dof_handler.n_dofs(),dof_handler.n_dofs());
-  dsp.block(1,1).reinit(dof_handler.n_dofs(),dof_handler.n_dofs());
-  dsp.collect_sizes();
-
+  DynamicSparsityPattern dsp (dof_handler.n_dofs(),dof_handler.n_dofs());
   DoFTools::make_sparsity_pattern (dof_handler, dsp);
   sparsity_pattern.copy_from (dsp);
+  
 
-  system_matrix.reinit(sparsity_pattern);
+  
+  A00.reinit (sparsity_pattern);
+  A01.reinit (sparsity_pattern);
+  A10.reinit (sparsity_pattern);
+  A11.reinit (sparsity_pattern);
 
-  solution.reinit(2);
-  solution.block(0).reinit (dof_handler.n_dofs());
-  solution.block(1).reinit (dof_handler.n_dofs());
-  solution.collect_sizes();
+  
+  const unsigned int rows = 2, cols = 2;
+  system_matrix = BlockMatrixArray<double>(rows,cols); 
 
-  system_rhs.reinit(2);
+  VH.reinit (2);
+  VH.block(0).reinit (dof_handler.n_dofs());
+  VH.block(1).reinit (dof_handler.n_dofs());
+  VH.collect_sizes();
+  
+  system_rhs.reinit (2);
   system_rhs.block(0).reinit (dof_handler.n_dofs());
   system_rhs.block(1).reinit (dof_handler.n_dofs());
   system_rhs.collect_sizes();
@@ -286,13 +293,14 @@ void VectorWillmoreFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
   /*}}}*/
 }
 
+
 template <int spacedim>
-void VectorWillmoreFlow<spacedim>::assemble_system ()
+void VectorWillmoreFlow<spacedim>::assemble_system (double zn)
 {
   /*{{{*/
   Identity<spacedim> identity_on_manifold;
 
-  const QGauss<dim>  quadrature_formula(2*fe.degree);
+  const QGauss<dim>  quadrature_formula (2*fe.degree);
   FEValues<dim,spacedim> fe_values (mapping, fe, quadrature_formula,
                                     update_values              |
                                     update_normal_vectors      |
@@ -304,116 +312,100 @@ void VectorWillmoreFlow<spacedim>::assemble_system ()
   const unsigned int  dofs_per_cell = fe.dofs_per_cell;
   const unsigned int  n_q_points    = quadrature_formula.size();
 
-  FullMatrix<double>  local_M (dofs_per_cell, dofs_per_cell);
-  FullMatrix<double>  local_L (dofs_per_cell, dofs_per_cell);
-  FullMatrix<double>  local_hL (dofs_per_cell, dofs_per_cell);
-  FullMatrix<double>  local_d (dofs_per_cell, dofs_per_cell);
+  FullMatrix<double>  local_M   (dofs_per_cell, dofs_per_cell);
+  FullMatrix<double>  local_L   (dofs_per_cell, dofs_per_cell);
+  FullMatrix<double>  local_hL  (dofs_per_cell, dofs_per_cell);
+  FullMatrix<double>  local_d   (dofs_per_cell, dofs_per_cell);
   Vector<double>      local_rhs (dofs_per_cell);
 
   
-  const FEValuesExtractors::Vector W(0);
+  const FEValuesExtractors::Vector W (0);
   std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
   
   for (typename DoFHandler<dim,spacedim>::active_cell_iterator
        cell = dof_handler.begin_active(),
        endc = dof_handler.end();
        cell!=endc; ++cell)
-    {
-      local_M   = 0;
-      local_L   = 0;
-      local_hL  = 0;
-      local_d   = 0;
-      local_rhs = 0;
+  { 
+    local_M   = 0;
+    local_L   = 0;
+    local_hL  = 0;
+    local_d   = 0;
+    local_rhs = 0;
 
-      fe_values.reinit (cell);
+    fe_values.reinit (cell);
 
-      for (unsigned int i=0; i<dofs_per_cell; ++i)
-        for (unsigned int j=0; j<dofs_per_cell; ++j)
-          for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
-          {
-            
-            local_M(i,j)  += fe_values[W].value(i,q_point)*
-                             fe_values[W].value(j,q_point)*
-                             fe_values.JxW(q_point);
-            
-            local_L(i,j)  += fe_values[W].gradient(i,q_point)*
-                             fe_values[W].gradient(j,q_point)*
-                             fe_values.JxW(q_point);
-            
-            local_hL(i,j) += fe_values[W].gradient(i,q_point)*
-                             fe_values[W].gradient(j,q_point)*
-                             fe_values.JxW(q_point);
-            local_hL(i)   += scalar_product(identity_on_manifold.shape_grad(fe_values.normal_vector(q_point))*
-                                            fe_values[W].gradient(i,q_point),
-                                            fe_values[W].gradient(j,q_point)
-                                           )* fe_values.JxW(q_point);
-            local_d(i,j)  += fe_values[W].divergence(i,q_point)*
-                             fe_values[W].divergence(j,q_point)*
-                             fe_values.JxW(q_point);
-          }
-
-      for (unsigned int i=0; i<dofs_per_cell; ++i)
+    for (unsigned int i=0; i<dofs_per_cell; ++i)
+      for (unsigned int j=0; j<dofs_per_cell; ++j)
         for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
         {
-          local_rhs(i) += scalar_product(fe_values[curv_components].gradient(i,q_point),
-                                         identity_on_manifold.shape_grad(fe_values.normal_vector(q_point))
-                                        )*fe_values.JxW(q_point);
+          
+          local_M(i,j)  += fe_values[W].value(i,q_point)*
+                           fe_values[W].value(j,q_point)*
+                           fe_values.JxW(q_point);
+          
+          local_L(i,j)  += scalar_product(fe_values[W].gradient(i,q_point),
+                                          fe_values[W].gradient(j,q_point)
+                                         )* fe_values.JxW(q_point);
+          
+          local_hL(i,j) += scalar_product(identity_on_manifold.shape_grad(fe_values.normal_vector(q_point))*
+                                          fe_values[W].gradient(i,q_point),
+                                          fe_values[W].gradient(j,q_point)
+                                         )* fe_values.JxW(q_point);
+          
+          local_d(i,j)  += fe_values[W].divergence(i,q_point)*
+                           fe_values[W].divergence(j,q_point)*
+                           fe_values.JxW(q_point);
         }
-      cell->get_dof_indices (local_dof_indices);
-      for (unsigned int i=0; i<dofs_per_cell; ++i)
+
+    for (unsigned int i=0; i<dofs_per_cell; ++i)
+      for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
       {
-        for (unsigned int j=0; j<dofs_per_cell; ++j)
-          system_matrix.add (local_dof_indices[i],
-                             local_dof_indices[j],
-                             cell_matrix(i,j));
-
-        system_rhs(local_dof_indices[i]) += cell_rhs(i);
+        local_rhs(i) += scalar_product(fe_values[W].gradient(i,q_point),
+                                       identity_on_manifold.shape_grad(fe_values.normal_vector(q_point))
+                                      )*fe_values.JxW(q_point);
       }
+
+    cell->get_dof_indices (local_dof_indices);
+    for (unsigned int i=0; i<dofs_per_cell; ++i)
+    {
+      for (unsigned int j=0; j<dofs_per_cell; ++j)
+      {
+        A00.add (local_dof_indices[i],
+                 local_dof_indices[j],
+                 local_M(i,j));
+
+        A01.add (local_dof_indices[i],
+                 local_dof_indices[j],
+                 local_L(i,j)
+               - 2.0*local_hL(i,j) 
+               + 0.5*local_d(i,j));
+        
+        A10.add (local_dof_indices[i],
+                 local_dof_indices[j],
+               - zn*local_L(i,j));
+        
+        A11.add (local_dof_indices[i],
+                 local_dof_indices[j],
+                 local_M(i,j));
+
+      }
+    system_rhs.block(1)(local_dof_indices[i]) += local_rhs(i);
     }
+  }
+
+  double kappa = 1e-1;
+  system_matrix.enter (A00, 0,0,  1);
+  system_matrix.enter (A01, 0,1,  kappa*1);
+  system_matrix.enter (A10, 1,0,  1);
+  system_matrix.enter (A11, 1,1,  1);
+
+  system_rhs.block(0) = 0;
   /*}}}*/
 }
 
 template <int spacedim>
-void VectorWillmoreFlow<spacedim>::solve ()
-{
-  /*{{{*/
-  std::cout << "ABOUT TO SOLVE!" << std::endl;
-  std::cout << solution.block(0).size() << std::endl;
-  SolverControl solver_control (solution.block(0).size(), 1e-12 );
-  SolverCG<>    cg (solver_control);
-
-
-  cg.solve (system_matrix.block(0,0), solution.block(0), system_rhs.block(0), PreconditionIdentity());
-  //cg.solve (system_matrix, solution, system_rhs, PreconditionIdentity());
-  std::cout << "Solved all components" << std::endl;
-
-  //std::vector< Vector<double> > curvature_components(n_q_points, Vector<double>(spacedim));
-  //
-  //for (typename DoFHandler<dim,spacedim>::active_cell_iterator
-  //     cell = dof_handler.begin_active(),
-  //     endc = dof_handler.end();
-  //     cell!=endc; ++cell)
-  //{
-  //  fe_values.reinit(cell);
-  //  fe_values.get_function_values(solution,curvature_components);
-  //}
-
-  //mean_curvature_squared.reinit (dof_handler.n_dofs());
-  //double avg = 0; double summ = 0;
-  //for (unsigned int i=0; i<dof_handler.n_dofs(); ++i )
-  //{
-
-  //  std::cout << "comps: " << solution.block(0)(i) << std::endl;
-  //  //mean_curvature_squared(i) = pow(solution(i)(0),2) + pow(solution(i)(1),2) + pow(solution(i)(2),2);
-  //  //summ += mean_curvature_squared(i);
-  //}
-  //avg = summ/dof_handler.n_dofs();
-  //std::cout << "avg mean curvature: " << avg << std::endl;
-  /*}}}*/
-}
-
-template <int spacedim>
-void VectorWillmoreFlow<spacedim>::output_results () const
+void VectorWillmoreFlow<spacedim>::output_results (int &step) const
 {
   /*{{{*/
 
@@ -421,7 +413,7 @@ void VectorWillmoreFlow<spacedim>::output_results () const
   DataOut<dim,DoFHandler<dim,spacedim> > data_out;
   data_out.attach_dof_handler (dof_handler);
 
-  data_out.add_data_vector (solution, computed_mean_curvature_squared);
+  data_out.add_data_vector (VH.block(1), computed_mean_curvature_squared);
 
   //data_out.add_data_vector (exact_solution_values,
   //                          "exact_solution",
@@ -430,79 +422,90 @@ void VectorWillmoreFlow<spacedim>::output_results () const
   data_out.build_patches (mapping,
                           mapping.get_degree());
 
-  std::string filename ("./data/mean_curvature_squared-");
-  filename += static_cast<char>('0'+spacedim);
-  filename += "d.vtk";
+  std::string filename ("./data/test_willmore_flow-" + Utilities::int_to_string(step, 5));
+  filename += ".vtk";
   std::ofstream output (filename.c_str());
   data_out.write_vtk (output);
   /*}}}*/
 }
 
-// @sect4{VectorWillmoreFlow::compute_error}
+template <int spacedim>
+void VectorWillmoreFlow<spacedim>::move_mesh (double zn, Vector<double> node_velocity) const
+{
+  /*{{{*/
+  std::cout << "    Moving mesh..." <<  std::endl;
+  std::vector<bool> vertex_touched (triangulation.n_vertices(), false);
 
-// This is the last piece of functionality: we want to compute the error in
-// the numerical solution. It is a verbatim copy of the code previously
-// shown and discussed in step-7. As mentioned in the introduction, the
-// <code>Solution</code> class provides the (tangential) gradient of the
-// solution. To avoid evaluating the error only a superconvergence points,
-// we choose a quadrature rule of sufficiently high order.
-//template <int spacedim>
-//void VectorWillmoreFlow<spacedim>::compute_error (double a, double b, double c, Point<3> center) const
-//{
-//  /*{{{*/
-//  Vector<float> difference_per_cell_L2 (triangulation.n_active_cells());
-//  VectorTools::integrate_difference (mapping, dof_handler, mean_curvature_squared,
-//                                     ExactSolution<3>(a,b,c,center),
-//                                     difference_per_cell_L2,
-//                                     QGauss<dim>(2*fe.degree+1),
-//                                     VectorTools::L2_norm);
-//  
-//  Vector<float> difference_per_cell_Linfty (triangulation.n_active_cells());
-//  VectorTools::integrate_difference (mapping, dof_handler, mean_curvature_squared,
-//                                     ExactSolution<3>(a,b,c,center),
-//                                     difference_per_cell_Linfty,
-//                                     QGauss<dim>(2*fe.degree+1),
-//                                     VectorTools::Linfty_norm);
-//
-//
-//  std::cout << "L2 error = "
-//            << difference_per_cell_L2.l2_norm()
-//            << std::endl;
-//  std::cout << "Linfty error = "
-//            << difference_per_cell_Linfty.linfty_norm()
-//            << std::endl;
-//  /*}}}*/
-//}
+  for (typename DoFHandler<2,spacedim>::active_cell_iterator
+       cell = dof_handler.begin_active ();
+       cell != dof_handler.end(); ++cell)
+  {
+    for (unsigned int v=0; v<GeometryInfo<2>::vertices_per_cell; ++v)
+      if (vertex_touched[cell->vertex_index(v)] == false)
+      { 
+        vertex_touched[cell->vertex_index(v)] = true;
+        
+        // add displacement to vertex
+        Point<spacedim> vertex_displacement;
+        for (unsigned int d=0; d<spacedim; ++d)
+        {
+          vertex_displacement[d] = zn*node_velocity(cell->vertex_dof_index(v,d));
+          cell->vertex(v) += vertex_displacement;
+        }
+        //printf("vertex disp: %0.12f, %0.12f, %0.12f\n", vertex_displacement(0),vertex_displacement(1), vertex_displacement(2));
+      }  
+  }
+  /*}}}*/
+}
 
 template <int spacedim>
 void VectorWillmoreFlow<spacedim>::run ()
 {
-  double a = 1; double b = 2; double c = 3;
+  /*{{{*/
+  double a = 1; double b = 1; double c = 2;
   Point<3> center(0,0,0);
   
-
   make_grid_and_dofs(a,b,c,center);
   std::cout << "grid and dofs made " << std::endl;
+            
+  double time = 0.0;
+  double end_time = 0.01;
+  int step = 0;
+  double zn = 0.000001;
   
-  assemble_system ();
-  std::cout << "system assembled " << std::endl;
-  
-  solve ();
-  std::cout << "solved " << std::endl;
-  
-  //exact_solution_values.reinit(dof_handler.n_dofs());
-  //VectorTools::interpolate(dof_handler, 
-  //                         ExactSolution<3>(a,b,c,center),
-  //                         exact_solution_values);
-  output_results ();
-  std::cout << "results written" << std::endl;
-  //
-  //compute_error(a,b,c,center);
-  //std::cout << "error computed" << std::endl;
-}
+            
+  while (time <= end_time)
+  {
+    /*{{{*/
+    time += zn; step +=1;
+    printf("time: %0.8f\n", time);
+    
+    // entire system must be reassembled because the mesh moved! 
+    assemble_system(zn);
+    
+    //std::cout << "nonzero rhs: " << system_rhs.block(1) << std::endl;
 
-}
+    SolverControl solver_control (VH.size(), 0.9*system_rhs.block(1).linfty_norm() );
+    SolverGMRES< BlockVector<double> > gmres (solver_control);
 
+    //PreconditionIdentity preconditioner;
+    // equation: system_matrix*VH = system_rhs
+    gmres.solve(system_matrix, VH, system_rhs, IdentityMatrix(VH.size()));
+
+    std::cout << "system_rhs(0) norm: " << system_rhs.block(0).l2_norm() << std::endl;
+    std::cout << "system_rhs(1) norm: " << system_rhs.block(1).l2_norm() << std::endl;
+    std::cout << "V l2 norm: " << VH.block(0).l2_norm() << std::endl;
+    std::cout << "H l2 norm: " << VH.block(1).l2_norm() << std::endl;
+
+    move_mesh(zn,VH.block(0));
+
+    output_results(step);
+    
+    /*}}}*/
+  }                                                                                 
+  /*}}}*/
+}
+}  
 
 int main ()
 {
@@ -516,7 +519,7 @@ int main ()
     return 0;
   }
   catch (std::exception &exc)
-    {
+  {
       std::cerr << std::endl << std::endl
                 << "----------------------------------------------------"
                 << std::endl;
@@ -526,10 +529,11 @@ int main ()
                 << "----------------------------------------------------"
                 << std::endl;
       return 1;
-    }
+  }
   catch (...)
-    {
+  {
       std::cout << "problem! " << std::endl;
       return 2;
-    }
+  }
 }
+

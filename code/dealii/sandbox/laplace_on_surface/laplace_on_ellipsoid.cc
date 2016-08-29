@@ -129,7 +129,6 @@ private:
   void make_grid_and_dofs ();
   void assemble_mesh_and_manifold();
   void assemble_system ();
-  void solve ();
   void output_results (int &step) const;
   void compute_error () const;
 
