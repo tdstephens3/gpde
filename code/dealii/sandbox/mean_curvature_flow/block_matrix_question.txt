@@ -1,0 +1,171 @@
+Would like to use:
+
+BlockSparseMatrix             system_matrix;
+BlockSparsityPattern          block_sparsity_pattern;
+
+
+
+
+
+------------------------------------------------------------------------------
+This compiles:
+
+FESystem<dim,spacedim>        fe; 
+DoFHandler<dim,spacedim>      dof_handler;
+MappingQ<dim, spacedim>       mapping;
+
+SparsityPattern               sparsity_pattern;
+
+SparseMatrix<double>          A00,A01,A10,A11;
+BlockMatrixArray<double>      system_matrix;
+BlockVector<double>           VH;
+BlockVector<double>           system_rhs;
+  
+dof_handler.distribute_dofs (fe);
+
+
+system_matrix.reinit (2,2);
+system_matrix.block(0,0).reinit (dof_handler.n_dofs(), dof_handler.n_dofs());
+system_matrix.block(0,1).reinit (dof_handler.n_dofs(), dof_handler.n_dofs());
+system_matrix.block(1,0).reinit (dof_handler.n_dofs(), dof_handler.n_dofs());
+system_matrix.block(1,1).reinit (dof_handler.n_dofs(), dof_handler.n_dofs());
+system_matrix.collect_sizes();
+
+
+
+
+
+
+/*
+ *    [  M     L-2*hL+0.5*d ][ V_n+1 ]   [  0  ]
+ *    |                     ||       | = |     |
+ *    [ -L           M      ][ H_n+1 ]   [ rhs ]
+ *
+ *    system_matrix*VH = system_rhs
+ *    
+ *    system_matrix has size 2*n_dofs x 2*n_dofs, 
+ *    each block has size n_dofs x n_dofs, and
+ *    rhs has size n_dofs
+ *
+ */
+
+DynamicSparsityPattern dsp (dof_handler.n_dofs(),dof_handler.n_dofs());
+DoFTools::make_sparsity_pattern (dof_handler, dsp);
+sparsity_pattern.copy_from (dsp);
+
+A00.reinit (sparsity_pattern);
+A01.reinit (sparsity_pattern);
+A10.reinit (sparsity_pattern);
+A11.reinit (sparsity_pattern);
+
+const unsigned int rows = 2, cols = 2;
+system_matrix = BlockMatrixArray<double>(rows,cols); 
+
+VH.reinit (2);
+VH.block(0).reinit (dof_handler.n_dofs());
+VH.block(1).reinit (dof_handler.n_dofs());
+VH.collect_sizes();
+
+system_rhs.reinit (2);
+system_rhs.block(0).reinit (dof_handler.n_dofs());
+system_rhs.block(1).reinit (dof_handler.n_dofs());
+system_rhs.collect_sizes();
+
+const unsigned int  dofs_per_cell = fe.dofs_per_cell;
+const unsigned int  n_q_points    = quadrature_formula.size();
+
+FullMatrix<double>  local_M   (dofs_per_cell, dofs_per_cell);
+FullMatrix<double>  local_L   (dofs_per_cell, dofs_per_cell);
+FullMatrix<double>  local_hL  (dofs_per_cell, dofs_per_cell);
+FullMatrix<double>  local_d   (dofs_per_cell, dofs_per_cell);
+Vector<double>      local_rhs (dofs_per_cell);
+
+
+const FEValuesExtractors::Vector W (0);
+std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
+
+for (typename DoFHandler<dim,spacedim>::active_cell_iterator
+     cell = dof_handler.begin_active(),
+     endc = dof_handler.end();
+     cell!=endc; ++cell)
+{ 
+  local_M   = 0;
+  local_L   = 0;
+  local_hL  = 0;
+  local_d   = 0;
+  local_rhs = 0;
+
+  fe_values.reinit (cell);
+    
+    for (unsigned int i=0; i<dofs_per_cell; ++i)
+      for (unsigned int j=0; j<dofs_per_cell; ++j)
+        for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+        {
+          
+          local_M(i,j)  += fe_values[W].value(i,q_point)*
+                           fe_values[W].value(j,q_point)*
+                           fe_values.JxW(q_point);
+          
+          local_L(i,j)  += scalar_product(fe_values[W].gradient(i,q_point),
+                                          fe_values[W].gradient(j,q_point)
+                                         )* fe_values.JxW(q_point);
+          
+          local_hL(i,j) += scalar_product(identity_on_manifold.shape_grad(fe_values.normal_vector(q_point))*
+                                          fe_values[W].gradient(i,q_point),
+                                          fe_values[W].gradient(j,q_point)
+                                         )* fe_values.JxW(q_point);
+          
+          local_d(i,j)  += fe_values[W].divergence(i,q_point)*
+                           fe_values[W].divergence(j,q_point)*
+                           fe_values.JxW(q_point);
+        }
+
+    for (unsigned int i=0; i<dofs_per_cell; ++i)
+      for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+      {
+        local_rhs(i) += scalar_product(fe_values[W].gradient(i,q_point),
+                                       identity_on_manifold.shape_grad(fe_values.normal_vector(q_point))
+                                      )*fe_values.JxW(q_point);
+      }
+
+    cell->get_dof_indices (local_dof_indices);
+    for (unsigned int i=0; i<dofs_per_cell; ++i)
+    {
+      for (unsigned int j=0; j<dofs_per_cell; ++j)
+      {
+        A00.add (local_dof_indices[i],
+                 local_dof_indices[j],
+                 local_M(i,j));
+
+        A01.add (local_dof_indices[i],
+                 local_dof_indices[j],
+                 local_L(i,j)
+               - 2.0*local_hL(i,j) 
+               + 0.5*local_d(i,j));
+        
+        A10.add (local_dof_indices[i],
+                 local_dof_indices[j],
+               - zn*local_L(i,j));
+        
+        A11.add (local_dof_indices[i],
+                 local_dof_indices[j],
+                 local_M(i,j));
+
+      }
+    system_rhs.block(1)(local_dof_indices[i]) += local_rhs(i);
+    }
+  }
+
+  double kappa = 1;
+  system_matrix.enter (A00, 0,0,  1);
+  system_matrix.enter (A01, 0,1,  kappa*1);
+  system_matrix.enter (A10, 1,0,  1);
+  system_matrix.enter (A11, 1,1,  1);
+
+  system_rhs.block(0) = 0;
+  /*}}}*/
+}
+    
+    
+    
+gmres.solve(system_matrix, VH, system_rhs, IdentityMatrix(VH.size()));

@@ -3,7 +3,7 @@
 ##
 
 # Set the name of the project and target:
-SET(TARGET "willmore_flow")
+SET(TARGET "block_willmore_flow")
 #SET(TARGET "willmore_flow")
 
 # Declare all source files the target consists of. Here, this is only
