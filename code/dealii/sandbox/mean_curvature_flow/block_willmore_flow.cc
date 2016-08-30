@@ -150,6 +150,7 @@ class Identity : public Function<spacedim>
     virtual void vector_value (const Point<spacedim> &p, Vector<double> &value) const;
     virtual double value (const Point<spacedim> &p, const unsigned int component = 0) const;
     
+    virtual Tensor<2,spacedim> symmetric_grad(const Tensor<1,spacedim> &unit_normal) const;
     virtual Tensor<2,spacedim> shape_grad(const Tensor<1,spacedim> &unit_normal) const;
     virtual Tensor<1,spacedim> shape_grad_component(const Tensor<1,spacedim> &unit_normal, const unsigned int component) const;
 /*}}}*/
@@ -185,6 +186,20 @@ void Identity<spacedim>::vector_value_list (const std::vector<Point<spacedim> > 
   for (unsigned int p=0; p<n_points; ++p)
     Identity<spacedim>::vector_value (points[p],
                                       value_list[p]);
+  /*}}}*/
+}
+
+template <int spacedim>
+Tensor<2,spacedim> Identity<spacedim>::symmetric_grad(const Tensor<1,spacedim> &unit_normal) const
+{
+  /*{{{*/
+  Tensor<2,spacedim> eye, shape_grad, shape_grad_T;
+  eye = 0; eye[0][0] = 1; eye[1][1] = 1; eye[2][2] = 1;
+  Tensor<2,spacedim> nnT;
+  nnT = outer_product(unit_normal,unit_normal);
+  shape_grad = eye - nnT;
+  shape_grad_T = transpose(shape_grad);
+  return shape_grad + shape_grad_T;
   /*}}}*/
 }
 
@@ -237,7 +252,7 @@ void VectorWillmoreFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
                        triangulation);
 
   triangulation.set_manifold (0, ellipsoid);
-  triangulation.refine_global(3);
+  triangulation.refine_global(4);
 
   std::cout << "Surface mesh has " << triangulation.n_active_cells()
             << " cells,\n"
@@ -263,7 +278,6 @@ void VectorWillmoreFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
    *    rhs has size n_dofs
    *
    */
-  DoFRenumbering::component_wise (dof_handler);
 
   BlockDynamicSparsityPattern dsp (2,2);
   dsp.block(0,0).reinit (dof_handler.n_dofs(), dof_handler.n_dofs());
@@ -271,7 +285,11 @@ void VectorWillmoreFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
   dsp.block(1,0).reinit (dof_handler.n_dofs(), dof_handler.n_dofs());
   dsp.block(1,1).reinit (dof_handler.n_dofs(), dof_handler.n_dofs());
   dsp.collect_sizes();
-  DoFTools::make_sparsity_pattern (dof_handler, dsp); //fails!
+ 
+  DoFTools::make_sparsity_pattern (dof_handler, dsp.block(0,0)); 
+  DoFTools::make_sparsity_pattern (dof_handler, dsp.block(0,1)); 
+  DoFTools::make_sparsity_pattern (dof_handler, dsp.block(1,0)); 
+  DoFTools::make_sparsity_pattern (dof_handler, dsp.block(1,1)); 
   
   block_sparsity_pattern.copy_from (dsp);
   system_matrix.reinit (block_sparsity_pattern);
@@ -296,7 +314,7 @@ void VectorWillmoreFlow<spacedim>::assemble_system (double zn)
   /*{{{*/
   Identity<spacedim> identity_on_manifold;
 
-  const QGauss<dim>  quadrature_formula (2*fe.degree);
+  const QGauss<dim>  quadrature_formula (fe.degree);
   FEValues<dim,spacedim> fe_values (mapping, fe, quadrature_formula,
                                     update_values              |
                                     update_normal_vectors      |
@@ -344,7 +362,7 @@ void VectorWillmoreFlow<spacedim>::assemble_system (double zn)
                                           fe_values[W].gradient(j,q_point)
                                          )* fe_values.JxW(q_point);
           
-          local_hL(i,j) += scalar_product(identity_on_manifold.shape_grad(fe_values.normal_vector(q_point))*
+          local_hL(i,j) += scalar_product(identity_on_manifold.symmetric_grad(fe_values.normal_vector(q_point))*
                                           fe_values[W].gradient(i,q_point),
                                           fe_values[W].gradient(j,q_point)
                                          )* fe_values.JxW(q_point);
@@ -374,7 +392,7 @@ void VectorWillmoreFlow<spacedim>::assemble_system (double zn)
         system_matrix.block(0,1).add (local_dof_indices[i],
                                       local_dof_indices[j],
                                       local_L(i,j)
-                                    - 2.0*local_hL(i,j) 
+                                    - local_hL(i,j) 
                                     + 0.5*local_d(i,j));
         
         system_matrix.block(1,0).add (local_dof_indices[i],
@@ -458,9 +476,9 @@ void VectorWillmoreFlow<spacedim>::run ()
   std::cout << "grid and dofs made " << std::endl;
             
   double time = 0.0;
-  double end_time = 0.01;
+  double end_time = 1;
   int step = 0;
-  double zn = 0.00001;
+  double zn = 0.0001;
   
             
   while (time <= end_time)
@@ -474,12 +492,13 @@ void VectorWillmoreFlow<spacedim>::run ()
     
     //std::cout << "nonzero rhs: " << system_rhs.block(1) << std::endl;
 
-    SolverControl solver_control (VH.size(), 0.9*system_rhs.block(1).l2_norm() );
+    SolverControl solver_control (VH.size(), 0.5*system_rhs.block(1).l2_norm() );
     SolverGMRES< BlockVector<double> > gmres (solver_control);
 
-    //PreconditionIdentity preconditioner;
+    PreconditionIdentity preconditioner;
+
     // equation: system_matrix*VH = system_rhs
-    gmres.solve(system_matrix, VH, system_rhs, IdentityMatrix(VH.size()));
+    gmres.solve(system_matrix, VH, system_rhs, preconditioner);
 
     std::cout << "system_rhs(0) norm: " << system_rhs.block(0).linfty_norm() << std::endl;
     std::cout << "system_rhs(1) norm: " << system_rhs.block(1).linfty_norm() << std::endl;
@@ -503,7 +522,7 @@ int main ()
     using namespace dealii;
     using namespace Step38;
     
-    VectorWillmoreFlow<3> laplace_beltrami;
+    VectorWillmoreFlow<3> laplace_beltrami(2);
     laplace_beltrami.run();
     return 0;
   }
