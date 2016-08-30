@@ -1,6 +1,6 @@
 /* ---------------------------------------------------------------------
  *
- * willmore_flow.cc
+ * willmore_flow.cc  August 2016
  *
  *  MODIFIED VERSION OF STEP-38, TOM STEPHENS, August 2016
  *
