@@ -1,6 +1,6 @@
 /* ---------------------------------------------------------------------
  *
- * willmore_flow.cc
+ * vector_helfrich_flow.cc      August 2016
  *
  *  MODIFIED VERSION OF STEP-38, TOM STEPHENS, August 2016
  *
@@ -56,19 +56,20 @@
 #include <iostream>
 
 // additional cpp code that is reusable
-#include "../../utilities/my_manifolds_lib.cc"
+#include "../utilities/my_manifolds_lib.cc"
 
-namespace VectorWillmore
+namespace VectorHelfrich
 {
   using namespace dealii;
 
 template <int spacedim>
-class VectorWillmoreFlow
+class VectorHelfrichFlow
 {
   /*{{{*/
   public:
-    VectorWillmoreFlow (const unsigned int fe_degree);
+    VectorHelfrichFlow (const unsigned int fe_degree);
     void run ();
+    
   
   private:
     static const unsigned int dim = spacedim-1;
@@ -93,17 +94,19 @@ class VectorWillmoreFlow
     BlockVector<double>           VH;
     BlockVector<double>           system_rhs;
     
-    Vector<double>                computed_mean_curvature_squared;
+    //Vector<double>                computed_mean_curvature_squared;
+    //Vector<double>                computed_velocity_squared;
     //Vector<double>                exact_mean_curvature_squared;
+    double kappa = 0.1;
     /*}}}*/
 };
 
 template <int spacedim>
-class ComputedMeanCurvatureSquared : public DataPostprocessorScalar<spacedim>
+class VectorValuedSolutionSquared : public DataPostprocessorScalar<spacedim>
 {
 /*{{{*/
 public:
-  ComputedMeanCurvatureSquared ();
+  VectorValuedSolutionSquared (std::string);
   virtual
   void
   compute_derived_quantities_vector (const std::vector<Vector<double> >                    &uh,
@@ -116,10 +119,10 @@ public:
 };
 
 template <int spacedim>
-ComputedMeanCurvatureSquared<spacedim>::ComputedMeanCurvatureSquared () : DataPostprocessorScalar<spacedim> ("computed_mean_curvature_squared", update_values) {}
+VectorValuedSolutionSquared<spacedim>::VectorValuedSolutionSquared (std::string data_name) : DataPostprocessorScalar<spacedim> (data_name, update_values) {}
 
 template <int spacedim> 
-void ComputedMeanCurvatureSquared<spacedim>::compute_derived_quantities_vector (const std::vector<Vector<double> >     &uh,
+void VectorValuedSolutionSquared<spacedim>::compute_derived_quantities_vector (const std::vector<Vector<double> >     &uh,
                                                                const std::vector<std::vector<Tensor<1, spacedim> > >   & /*duh*/,
                                                                const std::vector<std::vector<Tensor<2, spacedim> > >   & /*dduh*/,
                                                                const std::vector<Point<spacedim> >                     & /*normals*/,
@@ -232,7 +235,7 @@ Tensor<1,spacedim> Identity<spacedim>::shape_grad_component(const Tensor<1,space
 }
 
 template <int spacedim>
-VectorWillmoreFlow<spacedim>::VectorWillmoreFlow (const unsigned int fe_degree)
+VectorHelfrichFlow<spacedim>::VectorHelfrichFlow (const unsigned int fe_degree)
   :
   fe(FE_Q<dim,spacedim>(fe_degree),spacedim),
   dof_handler(triangulation),
@@ -240,7 +243,7 @@ VectorWillmoreFlow<spacedim>::VectorWillmoreFlow (const unsigned int fe_degree)
 {}
 
 template <int spacedim>
-void VectorWillmoreFlow<spacedim>::make_grid_and_dofs (double a, double b, double c, Point<spacedim> center)
+void VectorHelfrichFlow<spacedim>::make_grid_and_dofs (double a, double b, double c, Point<spacedim> center)
 {
   /*{{{*/
   static Ellipsoid<dim,spacedim> ellipsoid(a,b,c,center);
@@ -310,12 +313,12 @@ void VectorWillmoreFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
 
 
 template <int spacedim>
-void VectorWillmoreFlow<spacedim>::assemble_system (double zn)
+void VectorHelfrichFlow<spacedim>::assemble_system (double zn)
 {
   /*{{{*/
   Identity<spacedim> identity_on_manifold;
 
-  const QGauss<dim>  quadrature_formula (fe.degree);
+  const QGauss<dim>  quadrature_formula (2*fe.degree);
   FEValues<dim,spacedim> fe_values (mapping, fe, quadrature_formula,
                                     update_values              |
                                     update_normal_vectors      |
@@ -392,9 +395,9 @@ void VectorWillmoreFlow<spacedim>::assemble_system (double zn)
 
         system_matrix.block(0,1).add (local_dof_indices[i],
                                       local_dof_indices[j],
-                                      local_L(i,j)
+                               kappa*(local_L(i,j)
                                     - local_hL(i,j) 
-                                    + 0.5*local_d(i,j));
+                                    + 0.5*local_d(i,j)));
         
         system_matrix.block(1,0).add (local_dof_indices[i],
                                       local_dof_indices[j],
@@ -404,23 +407,32 @@ void VectorWillmoreFlow<spacedim>::assemble_system (double zn)
                                       local_dof_indices[j],
                                       local_M(i,j));
 
+      
+
       }
     system_rhs.block(1)(local_dof_indices[i]) += local_rhs(i);
     }
   }
+  //system_matrix.block(0,0) = 0;
+  //system_matrix.block(0,1) = 0;
+  //system_matrix.block(1,0) = 0;
+  
   system_rhs.block(0) = 0;
   /*}}}*/
 }
 
 template <int spacedim>
-void VectorWillmoreFlow<spacedim>::output_results (int &step) const
+void VectorHelfrichFlow<spacedim>::output_results (int &step) const
 {
   /*{{{*/
 
-  ComputedMeanCurvatureSquared<spacedim> computed_mean_curvature_squared;
+  VectorValuedSolutionSquared<spacedim> computed_velocity_squared("vel");
+  VectorValuedSolutionSquared<spacedim> computed_mean_curvature_squared("H2");
+  
   DataOut<dim,DoFHandler<dim,spacedim> > data_out;
   data_out.attach_dof_handler (dof_handler);
 
+  data_out.add_data_vector (VH.block(0), computed_velocity_squared);
   data_out.add_data_vector (VH.block(1), computed_mean_curvature_squared);
 
   //data_out.add_data_vector (exact_solution_values,
@@ -438,7 +450,7 @@ void VectorWillmoreFlow<spacedim>::output_results (int &step) const
 }
 
 template <int spacedim>
-void VectorWillmoreFlow<spacedim>::move_mesh (double zn, Vector<double> node_velocity) const
+void VectorHelfrichFlow<spacedim>::move_mesh (double zn, Vector<double> node_velocity) const
 {
   /*{{{*/
   std::cout << "    Moving mesh..." <<  std::endl;
@@ -460,14 +472,13 @@ void VectorWillmoreFlow<spacedim>::move_mesh (double zn, Vector<double> node_vel
           vertex_displacement[d] = zn*node_velocity(cell->vertex_dof_index(v,d));
           cell->vertex(v) += vertex_displacement;
         }
-        //printf("vertex disp: %0.12f, %0.12f, %0.12f\n", vertex_displacement(0),vertex_displacement(1), vertex_displacement(2));
       }  
   }
   /*}}}*/
 }
 
 template <int spacedim>
-void VectorWillmoreFlow<spacedim>::run ()
+void VectorHelfrichFlow<spacedim>::run ()
 {
   /*{{{*/
   double a = 1; double b = 2; double c = 3;
@@ -477,12 +488,13 @@ void VectorWillmoreFlow<spacedim>::run ()
   std::cout << "grid and dofs made " << std::endl;
             
   double time = 0.0;
-  double end_time = 1;
+  //double end_time = 1;
   int step = 0;
-  double zn = 0.0001;
+  double zn = 0.00000001;
+  double end_time = 100*zn;
   
             
-  while (time <= end_time)
+  while (time < end_time)
   {
     /*{{{*/
     time += zn; step +=1;
@@ -492,24 +504,23 @@ void VectorWillmoreFlow<spacedim>::run ()
     assemble_system(zn);
     
     //std::cout << "nonzero rhs: " << system_rhs.block(1) << std::endl;
+    
 
-    SolverControl solver_control (VH.size(), 0.5*system_rhs.block(1).l2_norm() );
+    SolverControl solver_control (VH.size(), 1e-12 );
     SolverGMRES< BlockVector<double> > gmres (solver_control);
+    //SolverCG< BlockVector<double> > cg (solver_control);
 
     PreconditionIdentity preconditioner;
 
     // equation: system_matrix*VH = system_rhs
     gmres.solve(system_matrix, VH, system_rhs, preconditioner);
-
-    std::cout << "system_rhs(0) norm: " << system_rhs.block(0).linfty_norm() << std::endl;
-    std::cout << "system_rhs(1) norm: " << system_rhs.block(1).linfty_norm() << std::endl;
-    std::cout << "V l-infinity norm: " << VH.block(0).linfty_norm() << std::endl;
-    std::cout << "H l-infinity norm: " << VH.block(1).linfty_norm() << std::endl;
+    //cg.solve(system_matrix, VH, system_rhs, preconditioner);
+    //cg.solve(system_matrix.block(1,1), VH.block(0), system_rhs.block(0), preconditioner);
 
     move_mesh(zn,VH.block(0));
 
     output_results(step);
-    
+
     /*}}}*/
   }                                                                                 
   /*}}}*/
@@ -521,11 +532,10 @@ int main ()
   try
   {
     using namespace dealii;
-    using namespace VectorWillmore;
+    using namespace VectorHelfrich;
     
     const unsigned int spacedim = 3;
-
-    VectorWillmoreFlow<spacedim> laplace_beltrami(2);
+    VectorHelfrichFlow<spacedim> laplace_beltrami(2);
     laplace_beltrami.run();
     return 0;
   }
