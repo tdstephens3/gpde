@@ -54,6 +54,7 @@
 #include <stdio.h>
 #include <fstream>
 #include <iostream>
+#include <typeinfo>
 
 // additional cpp code that is reusable
 #include "../utilities/my_manifolds_lib.cc"
@@ -69,6 +70,7 @@ class VectorHelfrichFlow
   public:
     VectorHelfrichFlow (const unsigned int fe_degree);
     void run ();
+
     
   
   private:
@@ -79,6 +81,7 @@ class VectorHelfrichFlow
     void move_mesh (double, Vector<double>) const;
     void output_results (int &step) const;
     //void compute_error (double, double, double, Point<3>) const;
+    double get_max_norm_wrt_cell(Vector<double>); 
   
   
     Triangulation<dim,spacedim>   triangulation;
@@ -97,7 +100,7 @@ class VectorHelfrichFlow
     //Vector<double>                computed_mean_curvature_squared;
     //Vector<double>                computed_velocity_squared;
     //Vector<double>                exact_mean_curvature_squared;
-    double kappa = 0.1;
+    double kappa = 0.5;
     /*}}}*/
 };
 
@@ -106,7 +109,7 @@ class VectorValuedSolutionSquared : public DataPostprocessorScalar<spacedim>
 {
 /*{{{*/
 public:
-  VectorValuedSolutionSquared (std::string);
+  VectorValuedSolutionSquared (std::string = "dummy");
   virtual
   void
   compute_derived_quantities_vector (const std::vector<Vector<double> >                    &uh,
@@ -478,6 +481,37 @@ void VectorHelfrichFlow<spacedim>::move_mesh (double zn, Vector<double> node_vel
 }
 
 template <int spacedim>
+double VectorHelfrichFlow<spacedim>::get_max_norm_wrt_cell(Vector<double> vector_data) 
+{
+/*{{{*/
+  const unsigned int dim = spacedim-1;
+  const QGauss<dim>  quadrature_formula (2*fe.degree);
+  const unsigned int n_q_points = quadrature_formula.size();
+  FEValues<dim,spacedim> fe_values (fe, quadrature_formula, update_values);
+  std::vector<Vector<double> > vector_data_values(n_q_points, Vector<double>(spacedim));
+  
+
+  double max_wrt_cell = 0;
+  typename DoFHandler<dim,spacedim>::active_cell_iterator
+  cell = dof_handler.begin_active(),
+  endc = dof_handler.end();
+  for (; cell!=endc; ++cell)
+  {
+    fe_values.reinit (cell);
+    fe_values.get_function_values (vector_data, vector_data_values);
+    for (unsigned int q=0; q<n_q_points; ++q)
+      {
+        Tensor<1,spacedim> vector_values;
+        for (unsigned int i=0; i<spacedim; ++i)
+          vector_values[i] = vector_data_values[q](i);
+        max_wrt_cell = std::max (max_wrt_cell, vector_values.norm());
+      }
+  }
+  return max_wrt_cell;
+/*}}}*/
+}
+
+template <int spacedim>
 void VectorHelfrichFlow<spacedim>::run ()
 {
   /*{{{*/
@@ -488,42 +522,136 @@ void VectorHelfrichFlow<spacedim>::run ()
   std::cout << "grid and dofs made " << std::endl;
             
   double time = 0.0;
-  //double end_time = 1;
-  int step = 0;
-  double zn = 0.00000001;
-  double end_time = 100*zn;
+  double end_time = 5.0;
+  double time_step = 5e-7;
+  double max_time_step = 1e-3;
+  double min_time_step = 1e-7;
+  double max_allowable_displacement = 2e-5;
+  double max_velo  = 0;
+  double solver_tol; 
   
-            
+  int step = 0;
   while (time < end_time)
   {
     /*{{{*/
-    time += zn; step +=1;
-    printf("time: %0.8f\n", time);
     
-    // entire system must be reassembled because the mesh moved! 
-    assemble_system(zn);
+    std::cout << "\n===================" << std::endl;
+    printf("iteration:    %d\n", step);
+    printf("current time: %0.8f\n", time);
+    printf("time_step:    %0.8f\n", time_step);
+    std::cout << "-------------------" << std::endl;
     
-    //std::cout << "nonzero rhs: " << system_rhs.block(1) << std::endl;
+    assemble_system(time_step);
+    solver_tol = 1e-7*system_rhs.linfty_norm();
     
+    std::cout << "system assembled" << std::endl;
+    std::cout << "max_norm rhs: " << get_max_norm_wrt_cell(system_rhs.block(1)) << std::endl;
+    std::cout << "solver_tol:   " << solver_tol  << std::endl;
+    
+    SolverControl solver_control (VH.size(), solver_tol);
+    SolverGMRES< BlockVector<double> > gmres (solver_control);
+    //SolverCG< BlockVector<double> > cg (solver_control);
+    PreconditionIdentity preconditioner;
+    
+    try
+    {
+      // equation: system_matrix*VH = system_rhs
+      gmres.solve(system_matrix, VH, system_rhs, preconditioner);
+     
+      max_velo = get_max_norm_wrt_cell(VH.block(0));
+      
+      if (time_step*max_velo > max_allowable_displacement)
+      {
+        std::cout << "........." << std::endl;
+        std::cout << "          time step too large" << std::endl;
+        std::cout << "          attempted displacement of: " << time_step*max_velo << std::endl;
+        time_step = std::max(0.9*time_step,min_time_step);
+        std::cout << "          reducing time step" << std::endl;
+        std::cout << "........." << std::endl;
+      }
+      else  // else: everything is fine
+      {
+        std::cout << "........." << std::endl;
+        std::cout << "          success!" << std::endl;
+        std::cout << "........." << std::endl;
+        
+        step += 1;
+        time += time_step;   
+        
+        move_mesh(time_step,VH.block(0));
+        
+        output_results(step);
+        
+        std::cout << "max displacement: " << time_step*max_velo  << std::endl;
+        std::cout << "H:                " << get_max_norm_wrt_cell(VH.block(1)) << std::endl;
+        if (step%5==0)
+        {
+          std::cout << "increasing time_step" << std::endl;
+          time_step = std::min(1.25*time_step,max_time_step);
+        }
+        std::cout << "\n___________________" << std::endl;
+      }
+    }
+    catch (dealii::SolverControl::NoConvergence)
+    {
+      std::cout << "\nooooooooooooooooooooooooooooooooooooooooooooooooooooo\n" << std::endl;
+      std::cout << "            solver did not converge for this time step" << std::endl;
+      std::cout << "\nooooooooooooooooooooooooooooooooooooooooooooooooooooo\n" << std::endl;
+      time_step = std::max(0.75*time_step,min_time_step);
+    }
+    
+  /*}}}*/
+  }
+  
 
-    SolverControl solver_control (VH.size(), 1e-12 );
+
+  bool able_to_start = false;
+  while (able_to_start == false)
+  {
+  /*{{{*/
+    printf("time_step:    %0.8f\n", time_step);
+    assemble_system(time_step);
+    solver_tol = 1e-11*system_rhs.linfty_norm();
+    std::cout << "solver_tol        " << solver_tol  << std::endl;
+    SolverControl solver_control (VH.size(), solver_tol);
     SolverGMRES< BlockVector<double> > gmres (solver_control);
     //SolverCG< BlockVector<double> > cg (solver_control);
 
     PreconditionIdentity preconditioner;
 
-    // equation: system_matrix*VH = system_rhs
-    gmres.solve(system_matrix, VH, system_rhs, preconditioner);
-    //cg.solve(system_matrix, VH, system_rhs, preconditioner);
-    //cg.solve(system_matrix.block(1,1), VH.block(0), system_rhs.block(0), preconditioner);
-
-    move_mesh(zn,VH.block(0));
-
-    output_results(step);
-
-    /*}}}*/
-  }                                                                                 
+    try
+    {
+      // equation: system_matrix*VH = system_rhs
+      gmres.solve(system_matrix, VH, system_rhs, preconditioner);
+      
+      max_velo = get_max_norm_wrt_cell(VH.block(0));
+      if (time_step*max_velo < max_allowable_displacement)
+      {
+        able_to_start = true;
+        move_mesh(time_step,VH.block(0));
+      }
+      else
+        time_step = std::max(0.5*time_step,min_time_step);
+    }
+    catch (dealii::SolverControl::NoConvergence)
+    {
+      std::cout << "solver did not converge for this time step" << std::endl;
+      time_step = std::max(0.5*time_step,min_time_step);
+    }
+    catch (std::exception &exc)
+    {
+        std::cerr << std::endl << std::endl
+                  << "----------------------------------------------------"
+                  << std::endl;
+        std::cerr << "Exception on processing: " << std::endl
+                  << exc.what() << std::endl
+                  << "Aborting!" << std::endl
+                  << "----------------------------------------------------"
+                  << std::endl;
+    }
   /*}}}*/
+  }  
+  
 }
 }  
 
