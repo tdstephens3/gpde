@@ -37,6 +37,7 @@
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/solver_gmres.h>
 #include <deal.II/lac/precondition.h>
+#include <deal.II/lac/iterative_inverse.h>
 #include <deal.II/lac/block_sparse_matrix.h>
 #include <deal.II/lac/block_matrix_array.h>
 #include <deal.II/lac/identity_matrix.h>
@@ -63,6 +64,7 @@ namespace VectorHelfrich
 {
   using namespace dealii;
 
+
 template <int spacedim>
 class VectorHelfrichFlow
 {
@@ -80,6 +82,8 @@ class VectorHelfrichFlow
     void assemble_system (double);
     void move_mesh (double, Vector<double>) const;
     void output_results (int &step) const;
+    void solve_using_gmres(); 
+    void solve_using_schur(); 
     //void compute_error (double, double, double, Point<3>) const;
     double get_max_norm_wrt_cell(Vector<double>); 
   
@@ -237,6 +241,67 @@ Tensor<1,spacedim> Identity<spacedim>::shape_grad_component(const Tensor<1,space
   /*}}}*/
 }
 
+class SchurComplement : public Subscriptor
+{
+public:
+  SchurComplement (const BlockSparseMatrix<double> &A,
+                   const IterativeInverse<Vector<double> > &Minv);
+  void vmult (Vector<double>       &dst,
+              const Vector<double> &src) const;
+private:
+  const SmartPointer<const BlockSparseMatrix<double> > system_matrix;
+  const SmartPointer<const IterativeInverse<Vector<double> > > m_inverse;
+  mutable Vector<double> tmp1, tmp2;
+};
+SchurComplement::SchurComplement (const BlockSparseMatrix<double> &A,
+                                  const IterativeInverse<Vector<double> > &Minv)
+  :
+  system_matrix (&A),
+  m_inverse (&Minv),
+  tmp1 (A.block(0,0).m()),
+  tmp2 (A.block(0,0).m())
+{}
+void SchurComplement::vmult (Vector<double>       &dst,
+                             const Vector<double> &src) const
+{
+  system_matrix->block(0,1).vmult (tmp1, src);
+  m_inverse->vmult (tmp2, tmp1);
+  system_matrix->block(1,0).vmult (dst, tmp2);
+}
+
+
+class ApproximateSchurComplement : public Subscriptor
+{
+public:
+  ApproximateSchurComplement (const BlockSparseMatrix<double> &A);
+  void vmult (Vector<double>       &dst,
+              const Vector<double> &src) const;
+  void Tvmult (Vector<double>       &dst,
+               const Vector<double> &src) const;
+private:
+  const SmartPointer<const BlockSparseMatrix<double> > system_matrix;
+  mutable Vector<double> tmp1, tmp2;
+};
+ApproximateSchurComplement::ApproximateSchurComplement (const BlockSparseMatrix<double> &A)
+  :
+  system_matrix (&A),
+  tmp1 (A.block(0,0).m()),
+  tmp2 (A.block(0,0).m())
+{}
+void ApproximateSchurComplement::vmult (Vector<double>       &dst,
+                                        const Vector<double> &src) const
+{
+  system_matrix->block(0,1).vmult (tmp1, src);
+  system_matrix->block(0,0).precondition_Jacobi (tmp2, tmp1);
+  system_matrix->block(1,0).vmult (dst, tmp2);
+}
+void ApproximateSchurComplement::Tvmult (Vector<double>       &dst,
+                                         const Vector<double> &src) const
+{
+  vmult (dst, src);
+}
+
+
 template <int spacedim>
 VectorHelfrichFlow<spacedim>::VectorHelfrichFlow (const unsigned int fe_degree)
   :
@@ -364,6 +429,11 @@ void VectorHelfrichFlow<spacedim>::assemble_system (double zn)
           local_M(i,j)  += fe_values[W].value(i,q_point)*
                            fe_values[W].value(j,q_point)*
                            fe_values.JxW(q_point);
+
+          //std::cout << "local M: " << fe_values[W].value(i,q_point)*
+          //                            fe_values[W].value(j,q_point)*
+          //                            fe_values.JxW(q_point)
+          //                         <<  std::endl;
           
           local_L(i,j)  += scalar_product(fe_values[W].gradient(i,q_point),
                                           fe_values[W].gradient(j,q_point)
@@ -511,6 +581,102 @@ double VectorHelfrichFlow<spacedim>::get_max_norm_wrt_cell(Vector<double> vector
 /*}}}*/
 }
 
+
+template <int spacedim>
+void VectorHelfrichFlow<spacedim>::solve_using_gmres() 
+{
+/*{{{*/
+  // equation: system_matrix*VH = system_rhs
+  double solver_tol = 1e-7*system_rhs.linfty_norm();
+  std::cout << "gmres solver_tol:   " << solver_tol  << std::endl;
+  SolverControl solver_control (VH.size(), solver_tol);
+  SolverGMRES< BlockVector<double> > gmres (solver_control);
+  PreconditionIdentity preconditioner;
+  
+  gmres.solve(system_matrix, VH, system_rhs, preconditioner);
+/*}}}*/
+}
+
+template <int spacedim>
+void VectorHelfrichFlow<spacedim>::solve_using_schur() 
+{
+/*{{{*/
+  std::cout << "using Schur" << std::endl;
+  //PreconditionIdentity preconditioner;
+  PreconditionSSOR<SparseMatrix<double> > preconditioner_for_inverse;
+  preconditioner_for_inverse.initialize(system_matrix.block(0,0),1.0);
+  //preconditioner.initialize(block;
+  IterativeInverse<Vector<double> > m_inverse;
+  m_inverse.initialize(system_matrix.block(0,0), preconditioner_for_inverse);
+  m_inverse.solver.select("cg");
+  static ReductionControl inner_control(1000, 1e-8);
+  m_inverse.solver.set_control(inner_control);
+  
+  Vector<double> tmp (VH.block(0).size());
+  Vector<double> schur_rhs (VH.block(1).size());
+  m_inverse.vmult (tmp, system_rhs.block(0));
+  system_matrix.block(1,0).vmult (schur_rhs, tmp);
+  schur_rhs -= system_rhs.block(1);
+  
+  SchurComplement schur_complement (system_matrix, m_inverse);
+
+  ApproximateSchurComplement approximate_schur_complement (system_matrix);
+  
+  PreconditionIdentity identity;
+  IterativeInverse<Vector<double> > preconditioner;
+  
+  preconditioner.initialize(approximate_schur_complement, identity);
+  preconditioner.solver.select("gmres");
+  preconditioner.solver.set_control(inner_control); 
+  SolverControl solver_control (VH.block(1).size(), 1e-12*schur_rhs.l2_norm());
+  SolverGMRES<> gmres (solver_control);
+  
+  try
+  {
+  gmres.solve (schur_complement, VH.block(1), schur_rhs, preconditioner);
+
+  std::cout << solver_control.last_step()
+            << " GMRES Schur complement iterations to obtain convergence."
+            << std::endl;
+  }
+  catch (std::exception &exc)
+  {
+    std::cerr << "Failure in Schur Complement solver!" << std::endl;
+    std::cerr << std::endl << std::endl
+              << "----------------------------------------------------"
+              << std::endl;
+    std::cerr << "Exception on processing: " << std::endl
+              << exc.what() << std::endl
+              << "Aborting!" << std::endl
+              << "----------------------------------------------------"
+              << std::endl;
+
+  }
+  
+  system_matrix.block(0,1).vmult (tmp, VH.block(1));
+  tmp *= -1;
+  tmp += system_rhs.block(0);
+  m_inverse.vmult (VH.block(0), tmp);
+/*}}}*/
+}
+
+
+
+void write_matrix(SparseMatrix<double> in, std::string name) 
+{
+  
+  std::ofstream myfile;
+  myfile.open(name);
+  std::cout << "about to call print" << std::endl;
+  in.print_formatted(myfile);
+  //for (size_t i=0; i<in.m(); ++i)
+  //  for (size_t j=0; j<in.n(); ++j)
+  //  {
+  //    myfile << in.el(i,j) << " ";
+  //  }
+  //  myfile << "\n";
+}
+
 template <int spacedim>
 void VectorHelfrichFlow<spacedim>::run ()
 {
@@ -522,16 +688,15 @@ void VectorHelfrichFlow<spacedim>::run ()
   std::cout << "grid and dofs made " << std::endl;
             
   double time = 0.0;
-  double end_time = 5.0;
-  double time_step = 5e-7;
+  double end_time = 1.0;
+  double time_step = 1e-7;
   double max_time_step = 1e-3;
   double min_time_step = 1e-7;
-  double max_allowable_displacement = 2e-5;
+  double max_allowable_displacement = 2e-3;
   double max_velo  = 0;
-  double solver_tol; 
   
-  int step = 0;
-  while (time < end_time)
+  int step = 0, write_solution_step = 0;
+  while (time < end_time && time_step >= min_time_step)
   {
     /*{{{*/
     
@@ -542,22 +707,24 @@ void VectorHelfrichFlow<spacedim>::run ()
     std::cout << "-------------------" << std::endl;
     
     assemble_system(time_step);
-    solver_tol = 1e-7*system_rhs.linfty_norm();
     
     std::cout << "system assembled" << std::endl;
     std::cout << "max_norm rhs: " << get_max_norm_wrt_cell(system_rhs.block(1)) << std::endl;
-    std::cout << "solver_tol:   " << solver_tol  << std::endl;
     
-    SolverControl solver_control (VH.size(), solver_tol);
-    SolverGMRES< BlockVector<double> > gmres (solver_control);
-    //SolverCG< BlockVector<double> > cg (solver_control);
-    PreconditionIdentity preconditioner;
-    
+    std::ofstream myfile;
+    myfile.open("data/M.txt");
+    std::cout << "about to call print" << std::endl;
+    //system_matrix.block(0,0).print(myfile,false,false);
+    system_matrix.block(0,0).print_formatted(myfile,3,true,0,"0");
+    //for (size_t i=0; i<in.m(); ++i)
+    //write_matrix(system_matrix.block(0,1), "data/Q.txt");
+    //write_matrix(system_matrix.block(1,0), "data/zL.txt");
+
     try
     {
-      // equation: system_matrix*VH = system_rhs
-      gmres.solve(system_matrix, VH, system_rhs, preconditioner);
-     
+      //solve_using_gmres();
+      solve_using_schur();
+
       max_velo = get_max_norm_wrt_cell(VH.block(0));
       
       if (time_step*max_velo > max_allowable_displacement)
@@ -575,15 +742,19 @@ void VectorHelfrichFlow<spacedim>::run ()
         std::cout << "          success!" << std::endl;
         std::cout << "........." << std::endl;
         
-        step += 1;
-        time += time_step;   
+        if (step%25==0)
+        {
+          output_results(write_solution_step);
+          write_solution_step+=1;
+        }
+        std::cout << "max displacement: " << time_step*max_velo  << std::endl;
+        std::cout << "H:                " << get_max_norm_wrt_cell(VH.block(1)) << std::endl;
         
         move_mesh(time_step,VH.block(0));
         
-        output_results(step);
+        step += 1;
+        time += time_step;   
         
-        std::cout << "max displacement: " << time_step*max_velo  << std::endl;
-        std::cout << "H:                " << get_max_norm_wrt_cell(VH.block(1)) << std::endl;
         if (step%5==0)
         {
           std::cout << "increasing time_step" << std::endl;
@@ -602,58 +773,9 @@ void VectorHelfrichFlow<spacedim>::run ()
     
   /*}}}*/
   }
-  
-
-
-  bool able_to_start = false;
-  while (able_to_start == false)
-  {
-  /*{{{*/
-    printf("time_step:    %0.8f\n", time_step);
-    assemble_system(time_step);
-    solver_tol = 1e-11*system_rhs.linfty_norm();
-    std::cout << "solver_tol        " << solver_tol  << std::endl;
-    SolverControl solver_control (VH.size(), solver_tol);
-    SolverGMRES< BlockVector<double> > gmres (solver_control);
-    //SolverCG< BlockVector<double> > cg (solver_control);
-
-    PreconditionIdentity preconditioner;
-
-    try
-    {
-      // equation: system_matrix*VH = system_rhs
-      gmres.solve(system_matrix, VH, system_rhs, preconditioner);
-      
-      max_velo = get_max_norm_wrt_cell(VH.block(0));
-      if (time_step*max_velo < max_allowable_displacement)
-      {
-        able_to_start = true;
-        move_mesh(time_step,VH.block(0));
-      }
-      else
-        time_step = std::max(0.5*time_step,min_time_step);
-    }
-    catch (dealii::SolverControl::NoConvergence)
-    {
-      std::cout << "solver did not converge for this time step" << std::endl;
-      time_step = std::max(0.5*time_step,min_time_step);
-    }
-    catch (std::exception &exc)
-    {
-        std::cerr << std::endl << std::endl
-                  << "----------------------------------------------------"
-                  << std::endl;
-        std::cerr << "Exception on processing: " << std::endl
-                  << exc.what() << std::endl
-                  << "Aborting!" << std::endl
-                  << "----------------------------------------------------"
-                  << std::endl;
-    }
   /*}}}*/
-  }  
-  
 }
-}  
+} // end of namespace VectorHelfrich 
 
 int main ()
 {
