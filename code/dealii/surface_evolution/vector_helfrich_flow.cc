@@ -241,34 +241,81 @@ Tensor<1,spacedim> Identity<spacedim>::shape_grad_component(const Tensor<1,space
   /*}}}*/
 }
 
+template <class Matrix, class Preconditioner>
+class InverseMatrix : public Subscriptor
+{
+public:
+  InverseMatrix (const Matrix &m, const Preconditioner &preconditioner);
+  void vmult (Vector<double>       &dst,
+              const Vector<double> &src) const;
+private:
+  const SmartPointer<const Matrix> matrix;
+  const SmartPointer<const Preconditioner> preconditioner;
+};
+template <class Matrix, class Preconditioner>
+InverseMatrix<Matrix,Preconditioner>::InverseMatrix (const Matrix &m, const Preconditioner &preconditioner)
+  :
+  matrix (&m),
+  preconditioner (&preconditioner)
+{}
+template <class Matrix, class Preconditioner>
+void InverseMatrix<Matrix,Preconditioner>::vmult (Vector<double>       &dst,
+                                                  const Vector<double> &src) const
+{
+  SolverControl solver_control (std::max(src.size(), static_cast<std::size_t> (200)),
+                                1e-6*src.l2_norm());
+  SolverCG<>    cg (solver_control);
+  dst = 0;
+  try
+  {
+    cg.solve (*matrix, dst, src, *preconditioner);
+  }
+  catch (std::exception &exc)
+  {
+    std::cerr << "Failure in solver!" << std::endl;
+    std::cerr << std::endl << std::endl
+              << "----------------------------------------------------"
+              << std::endl;
+    std::cerr << "Exception on processing: " << std::endl
+              << exc.what() << std::endl
+              << "Aborting!" << std::endl
+              << "----------------------------------------------------"
+              << std::endl;
+  }
+}
 class SchurComplement : public Subscriptor
 {
 public:
-  SchurComplement (const BlockSparseMatrix<double> &A,
-                   const IterativeInverse<Vector<double> > &Minv);
+  SchurComplement (const BlockSparseMatrix<double> &system_matrix,
+                   const IterativeInverse<Vector<double>> &A_inverse);
   void vmult (Vector<double>       &dst,
               const Vector<double> &src) const;
 private:
   const SmartPointer<const BlockSparseMatrix<double> > system_matrix;
-  const SmartPointer<const IterativeInverse<Vector<double> > > m_inverse;
-  mutable Vector<double> tmp1, tmp2;
+  const SmartPointer<const IterativeInverse<Vector<double> > > A_inverse;
+  mutable Vector<double> tmp1, tmp2, tmp3, tmp4;
 };
-SchurComplement::SchurComplement (const BlockSparseMatrix<double> &A,
-                                  const IterativeInverse<Vector<double> > &Minv)
+SchurComplement::
+SchurComplement (const BlockSparseMatrix<double> &system_matrix,
+                 const IterativeInverse<Vector<double>> &A_inverse)
   :
-  system_matrix (&A),
-  m_inverse (&Minv),
-  tmp1 (A.block(0,0).m()),
-  tmp2 (A.block(0,0).m())
+  system_matrix (&system_matrix),
+  A_inverse (&A_inverse),
+  tmp1 (system_matrix.block(0,0).m()),
+  tmp2 (system_matrix.block(0,0).m()),
+  tmp3 (system_matrix.block(0,0).m()),
+  tmp4 (system_matrix.block(0,0).m())
 {}
 void SchurComplement::vmult (Vector<double>       &dst,
                              const Vector<double> &src) const
 {
-  system_matrix->block(0,1).vmult (tmp1, src);
-  m_inverse->vmult (tmp2, tmp1);
-  system_matrix->block(1,0).vmult (dst, tmp2);
+  system_matrix->block(1,0).vmult (tmp1, src);  // Cv
+  A_inverse->vmult (tmp2, tmp1);                // invM*Cv
+  system_matrix->block(0,1).vmult (tmp3, tmp2); // B*invM*Cv
+  system_matrix->block(0,0).vmult(tmp4,src);    
+  dst += tmp4;                                  // Av - B*invM*Cv 
+  dst -= tmp3;
 }
-
 
 class ApproximateSchurComplement : public Subscriptor
 {
@@ -280,20 +327,25 @@ public:
                const Vector<double> &src) const;
 private:
   const SmartPointer<const BlockSparseMatrix<double> > system_matrix;
-  mutable Vector<double> tmp1, tmp2;
+  mutable Vector<double> tmp1, tmp2, tmp3, tmp4;
 };
 ApproximateSchurComplement::ApproximateSchurComplement (const BlockSparseMatrix<double> &A)
   :
   system_matrix (&A),
   tmp1 (A.block(0,0).m()),
-  tmp2 (A.block(0,0).m())
+  tmp2 (A.block(0,0).m()),
+  tmp3 (A.block(0,0).m()),
+  tmp4 (A.block(0,0).m())
 {}
 void ApproximateSchurComplement::vmult (Vector<double>       &dst,
                                         const Vector<double> &src) const
 {
-  system_matrix->block(0,1).vmult (tmp1, src);
-  system_matrix->block(0,0).precondition_Jacobi (tmp2, tmp1);
-  system_matrix->block(1,0).vmult (dst, tmp2);
+  system_matrix->block(1,0).vmult (tmp1, src);                // Cv
+  system_matrix->block(0,0).precondition_Jacobi (tmp2, tmp1); // jacobi A*Cv
+  system_matrix->block(0,1).vmult (tmp3, tmp2);               // B*jacobi A*Cv
+  system_matrix->block(0,0).precondition_Jacobi (tmp4, src);  // jacobi A*v
+  dst += tmp4;
+  dst -= tmp3;                                            // jacobi A*v - B*jacobi A*Cv
 }
 void ApproximateSchurComplement::Tvmult (Vector<double>       &dst,
                                          const Vector<double> &src) const
@@ -602,42 +654,46 @@ void VectorHelfrichFlow<spacedim>::solve_using_schur()
 {
 /*{{{*/
   std::cout << "using Schur" << std::endl;
-  //PreconditionIdentity preconditioner;
-  PreconditionSSOR<SparseMatrix<double> > preconditioner_for_inverse;
-  preconditioner_for_inverse.initialize(system_matrix.block(0,0),1.0);
-  //preconditioner.initialize(block;
-  IterativeInverse<Vector<double> > m_inverse;
-  m_inverse.initialize(system_matrix.block(0,0), preconditioner_for_inverse);
-  m_inverse.solver.select("cg");
-  static ReductionControl inner_control(1000, 1e-8);
-  m_inverse.solver.set_control(inner_control);
-  
-  Vector<double> tmp (VH.block(0).size());
-  Vector<double> schur_rhs (VH.block(1).size());
-  m_inverse.vmult (tmp, system_rhs.block(0));
-  system_matrix.block(1,0).vmult (schur_rhs, tmp);
-  schur_rhs -= system_rhs.block(1);
-  
-  SchurComplement schur_complement (system_matrix, m_inverse);
-
-  ApproximateSchurComplement approximate_schur_complement (system_matrix);
   
   PreconditionIdentity identity;
+  IterativeInverse<Vector<double> > m_inverse;
+  m_inverse.initialize(system_matrix.block(0,0), identity);
+  m_inverse.solver.select("gmres");
+  static ReductionControl inner_control(1000, 1.0e-10);
+  m_inverse.solver.set_control(inner_control);
+  Vector<double> tmp (VH.block(0).size());
+  
+  Vector<double> schur_rhs (VH.block(0).size());
+  m_inverse.vmult (tmp, system_rhs.block(1));
+  tmp *= -1;
+  system_matrix.block(0,1).vmult (schur_rhs, tmp); // schur_rhs = -B*invM*rhs
+  
+  ApproximateSchurComplement approx_schur(system_matrix);
   IterativeInverse<Vector<double> > preconditioner;
-  
-  preconditioner.initialize(approximate_schur_complement, identity);
+  preconditioner.initialize(approx_schur, identity);
   preconditioner.solver.select("gmres");
-  preconditioner.solver.set_control(inner_control); 
-  SolverControl solver_control (VH.block(1).size(), 1e-12*schur_rhs.l2_norm());
-  SolverGMRES<> gmres (solver_control);
+  preconditioner.solver.set_control(inner_control);
+
+  SolverControl solver_control (system_matrix.block(0,0).m(),
+                                1e-8*schur_rhs.l2_norm());
   
+  SolverGMRES<>    gmres (solver_control);
   try
   {
-  gmres.solve (schur_complement, VH.block(1), schur_rhs, preconditioner);
+    gmres.solve (SchurComplement(system_matrix, m_inverse),
+              VH.block(0),
+              schur_rhs,
+              preconditioner);
+    
+    system_matrix.block(1,0).vmult (tmp, VH.block(0));
+    tmp *= -1;
+    tmp += system_rhs.block(1);
+    m_inverse.vmult (VH.block(1), tmp);
+   
 
-  std::cout << solver_control.last_step()
-            << " GMRES Schur complement iterations to obtain convergence."
-            << std::endl;
+    std::cout << solver_control.last_step()
+              << "  Schur complement iterations to obtain convergence."
+              << std::endl;
   }
   catch (std::exception &exc)
   {
@@ -653,29 +709,14 @@ void VectorHelfrichFlow<spacedim>::solve_using_schur()
 
   }
   
-  system_matrix.block(0,1).vmult (tmp, VH.block(1));
-  tmp *= -1;
-  tmp += system_rhs.block(0);
-  m_inverse.vmult (VH.block(0), tmp);
+  //system_matrix.block(0,1).vmult (tmp, VH.block(1));
+  //tmp *= -1;
+  //tmp += system_rhs.block(0);
+  //m_inverse.vmult (VH.block(0), tmp);
 /*}}}*/
 }
 
 
-
-void write_matrix(SparseMatrix<double> in, std::string name) 
-{
-  
-  std::ofstream myfile;
-  myfile.open(name);
-  std::cout << "about to call print" << std::endl;
-  in.print_formatted(myfile);
-  //for (size_t i=0; i<in.m(); ++i)
-  //  for (size_t j=0; j<in.n(); ++j)
-  //  {
-  //    myfile << in.el(i,j) << " ";
-  //  }
-  //  myfile << "\n";
-}
 
 template <int spacedim>
 void VectorHelfrichFlow<spacedim>::run ()
@@ -689,7 +730,7 @@ void VectorHelfrichFlow<spacedim>::run ()
             
   double time = 0.0;
   double end_time = 1.0;
-  double time_step = 1e-7;
+  double time_step = 5e-7;
   double max_time_step = 1e-3;
   double min_time_step = 1e-7;
   double max_allowable_displacement = 2e-3;
@@ -711,15 +752,21 @@ void VectorHelfrichFlow<spacedim>::run ()
     std::cout << "system assembled" << std::endl;
     std::cout << "max_norm rhs: " << get_max_norm_wrt_cell(system_rhs.block(1)) << std::endl;
     
-    std::ofstream myfile;
-    myfile.open("data/M.txt");
-    std::cout << "about to call print" << std::endl;
-    //system_matrix.block(0,0).print(myfile,false,false);
-    system_matrix.block(0,0).print_formatted(myfile,3,true,0,"0");
-    //for (size_t i=0; i<in.m(); ++i)
-    //write_matrix(system_matrix.block(0,1), "data/Q.txt");
-    //write_matrix(system_matrix.block(1,0), "data/zL.txt");
-
+    bool write_mats = false;
+    if (write_mats)
+    {
+      std::ofstream A_file, B_file, C_file;
+      A_file.open("data/A.txt");
+      B_file.open("data/B.txt");
+      C_file.open("data/C.txt");
+      std::cout << "about to call print_formatted" << std::endl;
+      system_matrix.block(0,0).print_formatted(A_file,3,true,0,"0");
+      system_matrix.block(0,1).print_formatted(B_file,3,true,0,"0");
+      system_matrix.block(1,0).print_formatted(C_file,3,true,0,"0");
+      A_file.close();
+      B_file.close();
+      C_file.close();
+    }
     try
     {
       //solve_using_gmres();
