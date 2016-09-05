@@ -46,6 +46,7 @@
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_accessor.h>
 #include <deal.II/dofs/dof_tools.h>
+#include <deal.II/dofs/dof_renumbering.h>
 #include <deal.II/fe/fe_system.h>
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/numerics/data_out.h>
@@ -86,6 +87,7 @@ class VectorHelfrichFlow
     void solve_using_schur(); 
     //void compute_error (double, double, double, Point<3>) const;
     double get_max_norm_wrt_cell(Vector<double>); 
+    void write_matrices();
   
   
     Triangulation<dim,spacedim>   triangulation;
@@ -385,6 +387,7 @@ void VectorHelfrichFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
             << std::endl;
 
   dof_handler.distribute_dofs (fe);
+  DoFRenumbering::component_wise(dof_handler);
 
   std::cout << "Surface mesh has " << dof_handler.n_dofs()
             << " degrees of freedom."
@@ -459,6 +462,12 @@ void VectorHelfrichFlow<spacedim>::assemble_system (double zn)
   
   const FEValuesExtractors::Vector W (0);
   std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
+  system_matrix.block(0,0) = 0;
+  system_matrix.block(0,1) = 0;
+  system_matrix.block(1,0) = 0;
+  system_matrix.block(1,1) = 0;
+  system_rhs.block(0) = 0;
+  system_rhs.block(1) = 0;
   
   for (typename DoFHandler<dim,spacedim>::active_cell_iterator
        cell = dof_handler.begin_active(),
@@ -512,6 +521,7 @@ void VectorHelfrichFlow<spacedim>::assemble_system (double zn)
     cell->get_dof_indices (local_dof_indices);
     for (unsigned int i=0; i<dofs_per_cell; ++i)
     {
+      system_rhs.block(1)(local_dof_indices[i]) += local_rhs(i);
       for (unsigned int j=0; j<dofs_per_cell; ++j)
       {
         system_matrix.block(0,0).add (local_dof_indices[i],
@@ -535,7 +545,6 @@ void VectorHelfrichFlow<spacedim>::assemble_system (double zn)
       
 
       }
-    system_rhs.block(1)(local_dof_indices[i]) += local_rhs(i);
     }
   }
   //system_matrix.block(0,0) = 0;
@@ -622,12 +631,12 @@ double VectorHelfrichFlow<spacedim>::get_max_norm_wrt_cell(Vector<double> vector
     fe_values.reinit (cell);
     fe_values.get_function_values (vector_data, vector_data_values);
     for (unsigned int q=0; q<n_q_points; ++q)
-      {
-        Tensor<1,spacedim> vector_values;
-        for (unsigned int i=0; i<spacedim; ++i)
-          vector_values[i] = vector_data_values[q](i);
-        max_wrt_cell = std::max (max_wrt_cell, vector_values.norm());
-      }
+    {
+      Tensor<1,spacedim> vector_values;
+      for (unsigned int i=0; i<spacedim; ++i)
+        vector_values[i] = vector_data_values[q](i);
+      max_wrt_cell = std::max (max_wrt_cell, vector_values.norm());
+    }
   }
   return max_wrt_cell;
 /*}}}*/
@@ -646,7 +655,36 @@ void VectorHelfrichFlow<spacedim>::solve_using_gmres()
   PreconditionIdentity preconditioner;
   
   gmres.solve(system_matrix, VH, system_rhs, preconditioner);
+  std::cout << solver_control.last_step()
+            << "  gmres iterations to obtain convergence."
+            << std::endl;
 /*}}}*/
+}
+
+template <int spacedim>
+void VectorHelfrichFlow<spacedim>::write_matrices() 
+{
+  std::ofstream A_file, B_file, C_file, D_file, rhs0_file, rhs1_file;
+  A_file.open("data/A.txt");
+  B_file.open("data/B.txt");
+  C_file.open("data/C.txt");
+  D_file.open("data/D.txt");
+  rhs0_file.open("data/rhs0.txt");
+  rhs1_file.open("data/rhs1.txt");
+  std::cout << "about to call print_formatted" << std::endl;
+  system_matrix.block(0,0).print_formatted(A_file,8,true,0,"0");
+  system_matrix.block(0,1).print_formatted(B_file,8,true,0,"0");
+  system_matrix.block(1,0).print_formatted(C_file,8,true,0,"0");
+  system_matrix.block(1,1).print_formatted(D_file,8,true,0,"0");
+  system_rhs.block(0).print(rhs0_file,8);
+  system_rhs.block(1).print(rhs1_file,8);
+  A_file.close();
+  B_file.close();
+  C_file.close();
+  D_file.close();
+  rhs0_file.close();
+  rhs1_file.close();
+  std::cout << "matrices written" << std::endl;
 }
 
 template <int spacedim>
@@ -683,36 +721,25 @@ void VectorHelfrichFlow<spacedim>::solve_using_schur()
     gmres.solve (SchurComplement(system_matrix, m_inverse),
               VH.block(0),
               schur_rhs,
-              preconditioner);
+              PreconditionIdentity());
     
-    system_matrix.block(1,0).vmult (tmp, VH.block(0));
-    tmp *= -1;
-    tmp += system_rhs.block(1);
-    m_inverse.vmult (VH.block(1), tmp);
-   
 
     std::cout << solver_control.last_step()
               << "  Schur complement iterations to obtain convergence."
               << std::endl;
   }
-  catch (std::exception &exc)
+  catch (dealii::SolverControl::NoConvergence &nc)
   {
     std::cerr << "Failure in Schur Complement solver!" << std::endl;
-    std::cerr << std::endl << std::endl
-              << "----------------------------------------------------"
-              << std::endl;
-    std::cerr << "Exception on processing: " << std::endl
-              << exc.what() << std::endl
-              << "Aborting!" << std::endl
-              << "----------------------------------------------------"
-              << std::endl;
-
+    throw nc;
   }
-  
-  //system_matrix.block(0,1).vmult (tmp, VH.block(1));
-  //tmp *= -1;
-  //tmp += system_rhs.block(0);
-  //m_inverse.vmult (VH.block(0), tmp);
+
+  std::cout << "made it through Schur part, now solving for VH.block(1)" << std::endl;
+  system_matrix.block(1,0).vmult (tmp, VH.block(0));
+  tmp *= -1;
+  tmp += system_rhs.block(1);
+  m_inverse.vmult (VH.block(1), tmp);
+   
 /*}}}*/
 }
 
@@ -733,8 +760,10 @@ void VectorHelfrichFlow<spacedim>::run ()
   double time_step = 5e-7;
   double max_time_step = 1e-3;
   double min_time_step = 1e-7;
-  double max_allowable_displacement = 2e-3;
+  double max_allowable_displacement = 1e-2;
   double max_velo  = 0;
+  //double l2_norm_velo  = 0;
+  bool write_mats = false;
   
   int step = 0, write_solution_step = 0;
   while (time < end_time && time_step >= min_time_step)
@@ -743,36 +772,27 @@ void VectorHelfrichFlow<spacedim>::run ()
     
     std::cout << "\n===================" << std::endl;
     printf("iteration:    %d\n", step);
-    printf("current time: %0.8f\n", time);
-    printf("time_step:    %0.8f\n", time_step);
+    printf("current time: %0.9f\n", time);
+    printf("time_step:    %0.9f\n", time_step);
     std::cout << "-------------------" << std::endl;
     
     assemble_system(time_step);
     
     std::cout << "system assembled" << std::endl;
-    std::cout << "max_norm rhs: " << get_max_norm_wrt_cell(system_rhs.block(1)) << std::endl;
+    //std::cout << "max_norm rhs: "   << get_max_norm_wrt_cell(system_rhs.block(1)) << std::endl;
+    std::cout << "l2_norm rhs: "   << system_rhs.block(1).l2_norm() << std::endl;
     
-    bool write_mats = false;
     if (write_mats)
-    {
-      std::ofstream A_file, B_file, C_file;
-      A_file.open("data/A.txt");
-      B_file.open("data/B.txt");
-      C_file.open("data/C.txt");
-      std::cout << "about to call print_formatted" << std::endl;
-      system_matrix.block(0,0).print_formatted(A_file,3,true,0,"0");
-      system_matrix.block(0,1).print_formatted(B_file,3,true,0,"0");
-      system_matrix.block(1,0).print_formatted(C_file,3,true,0,"0");
-      A_file.close();
-      B_file.close();
-      C_file.close();
-    }
+      write_matrices();
+
+     
     try
     {
-      //solve_using_gmres();
-      solve_using_schur();
+      solve_using_gmres();
+      //solve_using_schur();
 
-      max_velo = get_max_norm_wrt_cell(VH.block(0));
+      //max_velo = get_max_norm_wrt_cell(VH.block(0));
+      max_velo = VH.block(0).l2_norm();
       
       if (time_step*max_velo > max_allowable_displacement)
       {
@@ -795,14 +815,15 @@ void VectorHelfrichFlow<spacedim>::run ()
           write_solution_step+=1;
         }
         std::cout << "max displacement: " << time_step*max_velo  << std::endl;
-        std::cout << "H:                " << get_max_norm_wrt_cell(VH.block(1)) << std::endl;
+        //std::cout << "H:                " << get_max_norm_wrt_cell(VH.block(1)) << std::endl;
+        std::cout << "H:                " << VH.block(1).l2_norm() << std::endl;
         
         move_mesh(time_step,VH.block(0));
         
         step += 1;
         time += time_step;   
         
-        if (step%5==0)
+        if (step%10==0)
         {
           std::cout << "increasing time_step" << std::endl;
           time_step = std::min(1.25*time_step,max_time_step);
@@ -815,7 +836,19 @@ void VectorHelfrichFlow<spacedim>::run ()
       std::cout << "\nooooooooooooooooooooooooooooooooooooooooooooooooooooo\n" << std::endl;
       std::cout << "            solver did not converge for this time step" << std::endl;
       std::cout << "\nooooooooooooooooooooooooooooooooooooooooooooooooooooo\n" << std::endl;
-      time_step = std::max(0.75*time_step,min_time_step);
+      std::cout << "decreasing time step" << std::endl;
+      time_step = 0.75*time_step;
+    }
+    catch (std::exception &exc)
+    {
+        std::cerr << std::endl << std::endl
+                  << "----------------------------------------------------"
+                  << std::endl;
+        std::cerr << "unknown exception, what does it say? " << std::endl
+                  << exc.what() << std::endl
+                  << "Aborting!" << std::endl
+                  << "----------------------------------------------------"
+                  << std::endl;
     }
     
   /*}}}*/
