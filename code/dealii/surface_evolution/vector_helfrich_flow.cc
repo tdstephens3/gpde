@@ -42,6 +42,7 @@
 #include <deal.II/lac/block_matrix_array.h>
 #include <deal.II/lac/identity_matrix.h>
 #include <deal.II/lac/sparse_matrix.h>
+#include <deal.II/lac/sparse_ilu.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_accessor.h>
@@ -82,7 +83,7 @@ class VectorHelfrichFlow
     void make_grid_and_dofs (double,double,double,Point<spacedim>);
     void assemble_system (double);
     void move_mesh (double, Vector<double>) const;
-    void output_results (int &step) const;
+    void output_results (int &step);
     void solve_using_gmres(); 
     void solve_using_schur(); 
     //void compute_error (double, double, double, Point<3>) const;
@@ -106,7 +107,7 @@ class VectorHelfrichFlow
     //Vector<double>                computed_mean_curvature_squared;
     //Vector<double>                computed_velocity_squared;
     //Vector<double>                exact_mean_curvature_squared;
-    double kappa = 0.5;
+    double kappa = 1;
     /*}}}*/
 };
 
@@ -243,48 +244,6 @@ Tensor<1,spacedim> Identity<spacedim>::shape_grad_component(const Tensor<1,space
   /*}}}*/
 }
 
-template <class Matrix, class Preconditioner>
-class InverseMatrix : public Subscriptor
-{
-public:
-  InverseMatrix (const Matrix &m, const Preconditioner &preconditioner);
-  void vmult (Vector<double>       &dst,
-              const Vector<double> &src) const;
-private:
-  const SmartPointer<const Matrix> matrix;
-  const SmartPointer<const Preconditioner> preconditioner;
-};
-template <class Matrix, class Preconditioner>
-InverseMatrix<Matrix,Preconditioner>::InverseMatrix (const Matrix &m, const Preconditioner &preconditioner)
-  :
-  matrix (&m),
-  preconditioner (&preconditioner)
-{}
-template <class Matrix, class Preconditioner>
-void InverseMatrix<Matrix,Preconditioner>::vmult (Vector<double>       &dst,
-                                                  const Vector<double> &src) const
-{
-  SolverControl solver_control (std::max(src.size(), static_cast<std::size_t> (200)),
-                                1e-6*src.l2_norm());
-  SolverCG<>    cg (solver_control);
-  dst = 0;
-  try
-  {
-    cg.solve (*matrix, dst, src, *preconditioner);
-  }
-  catch (std::exception &exc)
-  {
-    std::cerr << "Failure in solver!" << std::endl;
-    std::cerr << std::endl << std::endl
-              << "----------------------------------------------------"
-              << std::endl;
-    std::cerr << "Exception on processing: " << std::endl
-              << exc.what() << std::endl
-              << "Aborting!" << std::endl
-              << "----------------------------------------------------"
-              << std::endl;
-  }
-}
 class SchurComplement : public Subscriptor
 {
 public:
@@ -317,42 +276,6 @@ void SchurComplement::vmult (Vector<double>       &dst,
   system_matrix->block(0,0).vmult(tmp4,src);    
   dst += tmp4;                                  // Av - B*invM*Cv 
   dst -= tmp3;
-}
-
-class ApproximateSchurComplement : public Subscriptor
-{
-public:
-  ApproximateSchurComplement (const BlockSparseMatrix<double> &A);
-  void vmult (Vector<double>       &dst,
-              const Vector<double> &src) const;
-  void Tvmult (Vector<double>       &dst,
-               const Vector<double> &src) const;
-private:
-  const SmartPointer<const BlockSparseMatrix<double> > system_matrix;
-  mutable Vector<double> tmp1, tmp2, tmp3, tmp4;
-};
-ApproximateSchurComplement::ApproximateSchurComplement (const BlockSparseMatrix<double> &A)
-  :
-  system_matrix (&A),
-  tmp1 (A.block(0,0).m()),
-  tmp2 (A.block(0,0).m()),
-  tmp3 (A.block(0,0).m()),
-  tmp4 (A.block(0,0).m())
-{}
-void ApproximateSchurComplement::vmult (Vector<double>       &dst,
-                                        const Vector<double> &src) const
-{
-  system_matrix->block(1,0).vmult (tmp1, src);                // Cv
-  system_matrix->block(0,0).precondition_Jacobi (tmp2, tmp1); // jacobi A*Cv
-  system_matrix->block(0,1).vmult (tmp3, tmp2);               // B*jacobi A*Cv
-  system_matrix->block(0,0).precondition_Jacobi (tmp4, src);  // jacobi A*v
-  dst += tmp4;
-  dst -= tmp3;                                            // jacobi A*v - B*jacobi A*Cv
-}
-void ApproximateSchurComplement::Tvmult (Vector<double>       &dst,
-                                         const Vector<double> &src) const
-{
-  vmult (dst, src);
 }
 
 
@@ -439,7 +362,10 @@ template <int spacedim>
 void VectorHelfrichFlow<spacedim>::assemble_system (double zn)
 {
   /*{{{*/
-  Identity<spacedim> identity_on_manifold;
+  
+  system_matrix = 0;
+  system_rhs = 0;
+  
 
   const QGauss<dim>  quadrature_formula (2*fe.degree);
   FEValues<dim,spacedim> fe_values (mapping, fe, quadrature_formula,
@@ -460,14 +386,9 @@ void VectorHelfrichFlow<spacedim>::assemble_system (double zn)
   Vector<double>      local_rhs (dofs_per_cell);
 
   
+  Identity<spacedim> identity_on_manifold;
   const FEValuesExtractors::Vector W (0);
   std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
-  system_matrix.block(0,0) = 0;
-  system_matrix.block(0,1) = 0;
-  system_matrix.block(1,0) = 0;
-  system_matrix.block(1,1) = 0;
-  system_rhs.block(0) = 0;
-  system_rhs.block(1) = 0;
   
   for (typename DoFHandler<dim,spacedim>::active_cell_iterator
        cell = dof_handler.begin_active(),
@@ -491,16 +412,11 @@ void VectorHelfrichFlow<spacedim>::assemble_system (double zn)
                            fe_values[W].value(j,q_point)*
                            fe_values.JxW(q_point);
 
-          //std::cout << "local M: " << fe_values[W].value(i,q_point)*
-          //                            fe_values[W].value(j,q_point)*
-          //                            fe_values.JxW(q_point)
-          //                         <<  std::endl;
-          
           local_L(i,j)  += scalar_product(fe_values[W].gradient(i,q_point),
                                           fe_values[W].gradient(j,q_point)
                                          )* fe_values.JxW(q_point);
           
-          local_hL(i,j) += scalar_product(identity_on_manifold.symmetric_grad(fe_values.normal_vector(q_point))*
+          local_hL(i,j) += scalar_product(2.0*identity_on_manifold.shape_grad(fe_values.normal_vector(q_point))*
                                           fe_values[W].gradient(i,q_point),
                                           fe_values[W].gradient(j,q_point)
                                          )* fe_values.JxW(q_point);
@@ -556,16 +472,28 @@ void VectorHelfrichFlow<spacedim>::assemble_system (double zn)
 }
 
 template <int spacedim>
-void VectorHelfrichFlow<spacedim>::output_results (int &step) const
+void VectorHelfrichFlow<spacedim>::output_results (int &step) 
 {
   /*{{{*/
 
-  VectorValuedSolutionSquared<spacedim> computed_velocity_squared("vel");
-  VectorValuedSolutionSquared<spacedim> computed_mean_curvature_squared("H2");
+  std::vector<std::string> solution_names (spacedim, "vector_velocity");
   
+  std::vector<DataComponentInterpretation::DataComponentInterpretation>
+       data_component_interpretation(spacedim,
+                                     DataComponentInterpretation::component_is_part_of_vector);
+
   DataOut<dim,DoFHandler<dim,spacedim> > data_out;
   data_out.attach_dof_handler (dof_handler);
 
+  data_out.add_data_vector (VH.block(0), solution_names,
+                            DataOut<dim,DoFHandler<dim,spacedim> >::type_dof_data,
+                            data_component_interpretation);
+  
+  //solution_names.push_back ("scalar_velocity");
+  //solution_names.push_back ("H2");
+  
+  VectorValuedSolutionSquared<spacedim> computed_velocity_squared("scalar_velocity");
+  VectorValuedSolutionSquared<spacedim> computed_mean_curvature_squared("H2");
   data_out.add_data_vector (VH.block(0), computed_velocity_squared);
   data_out.add_data_vector (VH.block(1), computed_mean_curvature_squared);
 
@@ -652,12 +580,36 @@ void VectorHelfrichFlow<spacedim>::solve_using_gmres()
   std::cout << "gmres solver_tol:   " << solver_tol  << std::endl;
   SolverControl solver_control (VH.size(), solver_tol);
   SolverGMRES< BlockVector<double> > gmres (solver_control);
-  PreconditionIdentity preconditioner;
   
-  gmres.solve(system_matrix, VH, system_rhs, preconditioner);
-  std::cout << solver_control.last_step()
-            << "  gmres iterations to obtain convergence."
-            << std::endl;
+  PreconditionIdentity preconditioner_identity;
+
+  //SparseILU<double>::AdditionalData additional_data(0,100);
+  //SparseILU<double> preconditioner_ilu;
+  //preconditioner_ilu.initialize (system_matrix.block(0,1), additional_data);
+
+  
+  try
+  {
+    gmres.solve(system_matrix, VH, system_rhs, preconditioner_identity);
+    std::cout << solver_control.last_step()
+              << "  gmres iterations to obtain convergence.\n"
+              << "  last value: "
+              << solver_control.last_value()
+              << "\n  last check: "
+              << solver_control.last_check()
+              << std::endl;
+  }
+  catch (dealii::SolverControl::NoConvergence &nc)
+  {
+    std::cout << solver_control.last_step()
+              << "  gmres iterations to obtain convergence.\n"
+              << "  last value: "
+              << solver_control.last_value()
+              << "\n  last check"
+              << solver_control.last_check()
+              << std::endl;
+    throw nc;
+  }
 /*}}}*/
 }
 
@@ -691,55 +643,55 @@ template <int spacedim>
 void VectorHelfrichFlow<spacedim>::solve_using_schur() 
 {
 /*{{{*/
-  std::cout << "using Schur" << std::endl;
-  
-  PreconditionIdentity identity;
-  IterativeInverse<Vector<double> > m_inverse;
-  m_inverse.initialize(system_matrix.block(0,0), identity);
-  m_inverse.solver.select("gmres");
-  static ReductionControl inner_control(1000, 1.0e-10);
-  m_inverse.solver.set_control(inner_control);
-  Vector<double> tmp (VH.block(0).size());
-  
-  Vector<double> schur_rhs (VH.block(0).size());
-  m_inverse.vmult (tmp, system_rhs.block(1));
-  tmp *= -1;
-  system_matrix.block(0,1).vmult (schur_rhs, tmp); // schur_rhs = -B*invM*rhs
-  
-  ApproximateSchurComplement approx_schur(system_matrix);
-  IterativeInverse<Vector<double> > preconditioner;
-  preconditioner.initialize(approx_schur, identity);
-  preconditioner.solver.select("gmres");
-  preconditioner.solver.set_control(inner_control);
-
-  SolverControl solver_control (system_matrix.block(0,0).m(),
-                                1e-8*schur_rhs.l2_norm());
-  
-  SolverGMRES<>    gmres (solver_control);
-  try
-  {
-    gmres.solve (SchurComplement(system_matrix, m_inverse),
-              VH.block(0),
-              schur_rhs,
-              PreconditionIdentity());
-    
-
-    std::cout << solver_control.last_step()
-              << "  Schur complement iterations to obtain convergence."
-              << std::endl;
-  }
-  catch (dealii::SolverControl::NoConvergence &nc)
-  {
-    std::cerr << "Failure in Schur Complement solver!" << std::endl;
-    throw nc;
-  }
-
-  std::cout << "made it through Schur part, now solving for VH.block(1)" << std::endl;
-  system_matrix.block(1,0).vmult (tmp, VH.block(0));
-  tmp *= -1;
-  tmp += system_rhs.block(1);
-  m_inverse.vmult (VH.block(1), tmp);
-   
+//  std::cout << "using Schur" << std::endl;
+//  
+//  PreconditionIdentity identity;
+//  IterativeInverse<Vector<double> > m_inverse;
+//  m_inverse.initialize(system_matrix.block(0,0), identity);
+//  m_inverse.solver.select("gmres");
+//  static ReductionControl inner_control(1000, 1.0e-10);
+//  m_inverse.solver.set_control(inner_control);
+//  Vector<double> tmp (VH.block(0).size());
+//  
+//  Vector<double> schur_rhs (VH.block(0).size());
+//  m_inverse.vmult (tmp, system_rhs.block(1));
+//  tmp *= -1;
+//  system_matrix.block(0,1).vmult (schur_rhs, tmp); // schur_rhs = -B*invM*rhs
+//  
+//  ApproximateSchurComplement approx_schur(system_matrix);
+//  IterativeInverse<Vector<double> > preconditioner;
+//  preconditioner.initialize(approx_schur, identity);
+//  preconditioner.solver.select("gmres");
+//  preconditioner.solver.set_control(inner_control);
+//
+//  SolverControl solver_control (system_matrix.block(0,0).m(),
+//                                1e-8*schur_rhs.l2_norm());
+//  
+//  SolverGMRES<>    gmres (solver_control);
+//  try
+//  {
+//    gmres.solve (SchurComplement(system_matrix, m_inverse),
+//              VH.block(0),
+//              schur_rhs,
+//              PreconditionIdentity());
+//    
+//
+//    std::cout << solver_control.last_step()
+//              << "  Schur complement iterations to obtain convergence."
+//              << std::endl;
+//  }
+//  catch (dealii::SolverControl::NoConvergence &nc)
+//  {
+//    std::cerr << "Failure in Schur Complement solver!" << std::endl;
+//    throw nc;
+//  }
+//
+//  std::cout << "made it through Schur part, now solving for VH.block(1)" << std::endl;
+//  system_matrix.block(1,0).vmult (tmp, VH.block(0));
+//  tmp *= -1;
+//  tmp += system_rhs.block(1);
+//  m_inverse.vmult (VH.block(1), tmp);
+//   
 /*}}}*/
 }
 
@@ -749,7 +701,7 @@ template <int spacedim>
 void VectorHelfrichFlow<spacedim>::run ()
 {
   /*{{{*/
-  double a = 1; double b = 2; double c = 3;
+  double a = 1; double b = 1; double c = 1;
   Point<3> center(0,0,0);
   
   make_grid_and_dofs(a,b,c,center);
@@ -757,10 +709,10 @@ void VectorHelfrichFlow<spacedim>::run ()
             
   double time = 0.0;
   double end_time = 1.0;
-  double time_step = 5e-7;
+  double time_step = 1e-7;
   double max_time_step = 1e-3;
   double min_time_step = 1e-7;
-  double max_allowable_displacement = 1e-2;
+  double max_allowable_displacement = 1e-1;
   double max_velo  = 0;
   //double l2_norm_velo  = 0;
   bool write_mats = false;
