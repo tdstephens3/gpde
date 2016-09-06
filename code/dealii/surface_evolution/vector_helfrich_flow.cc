@@ -94,7 +94,7 @@ class VectorHelfrichFlow
     Triangulation<dim,spacedim>   triangulation;
     FESystem<dim,spacedim>        fe; 
     double                        fe_degree;
-    const unsigned int            global_refinements = 3;
+    const unsigned int            global_refinements = 2;
     DoFHandler<dim,spacedim>      dof_handler;
     MappingQ<dim, spacedim>       mapping;
   
@@ -362,10 +362,9 @@ template <int spacedim>
 void VectorHelfrichFlow<spacedim>::assemble_system (double zn)
 {
   /*{{{*/
-  
   system_matrix = 0;
+  VH = 0;
   system_rhs = 0;
-  
 
   const QGauss<dim>  quadrature_formula (2*fe.degree);
   FEValues<dim,spacedim> fe_values (mapping, fe, quadrature_formula,
@@ -475,6 +474,16 @@ template <int spacedim>
 void VectorHelfrichFlow<spacedim>::output_results (int &step) 
 {
   /*{{{*/
+  
+  VectorValuedSolutionSquared<spacedim> computed_velocity_squared("scalar_velocity");
+  VectorValuedSolutionSquared<spacedim> computed_mean_curvature_squared("H2");
+  
+  DataOut<dim,DoFHandler<dim,spacedim> > data_out;
+  data_out.attach_dof_handler (dof_handler);
+  
+  data_out.add_data_vector (VH.block(0), computed_velocity_squared);
+  data_out.add_data_vector (VH.block(1), computed_mean_curvature_squared);
+
 
   std::vector<std::string> solution_names (spacedim, "vector_velocity");
   
@@ -482,21 +491,12 @@ void VectorHelfrichFlow<spacedim>::output_results (int &step)
        data_component_interpretation(spacedim,
                                      DataComponentInterpretation::component_is_part_of_vector);
 
-  DataOut<dim,DoFHandler<dim,spacedim> > data_out;
-  data_out.attach_dof_handler (dof_handler);
 
   data_out.add_data_vector (VH.block(0), solution_names,
                             DataOut<dim,DoFHandler<dim,spacedim> >::type_dof_data,
                             data_component_interpretation);
   
-  //solution_names.push_back ("scalar_velocity");
-  //solution_names.push_back ("H2");
   
-  VectorValuedSolutionSquared<spacedim> computed_velocity_squared("scalar_velocity");
-  VectorValuedSolutionSquared<spacedim> computed_mean_curvature_squared("H2");
-  data_out.add_data_vector (VH.block(0), computed_velocity_squared);
-  data_out.add_data_vector (VH.block(1), computed_mean_curvature_squared);
-
   //data_out.add_data_vector (exact_solution_values,
   //                          "exact_solution",
   //                          DataOut<dim,DoFHandler<dim,spacedim> >::type_dof_data);
@@ -576,7 +576,7 @@ void VectorHelfrichFlow<spacedim>::solve_using_gmres()
 {
 /*{{{*/
   // equation: system_matrix*VH = system_rhs
-  double solver_tol = 1e-7*system_rhs.linfty_norm();
+  double solver_tol = 1e-4*system_rhs.linfty_norm();
   std::cout << "gmres solver_tol:   " << solver_tol  << std::endl;
   SolverControl solver_control (VH.size(), solver_tol);
   SolverGMRES< BlockVector<double> > gmres (solver_control);
@@ -701,7 +701,7 @@ template <int spacedim>
 void VectorHelfrichFlow<spacedim>::run ()
 {
   /*{{{*/
-  double a = 1; double b = 1; double c = 1;
+  double a = 1; double b = 1.25; double c = 1.5;
   Point<3> center(0,0,0);
   
   make_grid_and_dofs(a,b,c,center);
@@ -709,9 +709,9 @@ void VectorHelfrichFlow<spacedim>::run ()
             
   double time = 0.0;
   double end_time = 1.0;
-  double time_step = 1e-7;
-  double max_time_step = 1e-3;
-  double min_time_step = 1e-7;
+  double time_step = 1e-6;
+  double max_time_step = 1e-2;
+  double min_time_step = 1e-8;
   double max_allowable_displacement = 1e-1;
   double max_velo  = 0;
   //double l2_norm_velo  = 0;
@@ -761,7 +761,7 @@ void VectorHelfrichFlow<spacedim>::run ()
         std::cout << "          success!" << std::endl;
         std::cout << "........." << std::endl;
         
-        if (step%25==0)
+        if (step%1==0)
         {
           output_results(write_solution_step);
           write_solution_step+=1;
