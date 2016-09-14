@@ -95,7 +95,7 @@ class VectorHelfrichFlow
     Triangulation<dim,spacedim>   triangulation;
     FESystem<dim,spacedim>        fe; 
     double                        fe_degree;
-    const unsigned int            global_refinements = 3;
+    const unsigned int            global_refinements = 2;
     DoFHandler<dim,spacedim>      dof_handler;
     MappingQ<dim, spacedim>       mapping;
   
@@ -292,16 +292,21 @@ template <int spacedim>
 void VectorHelfrichFlow<spacedim>::make_grid_and_dofs (double a, double b, double c, Point<spacedim> center)
 {
   /*{{{*/
-  static Ellipsoid<dim,spacedim> ellipsoid(a,b,c,center);
 
-  GridGenerator::hyper_sphere(triangulation,center, 1);
+  /// make a p-sphere, this isnt working
+  static SphericalManifold<dim,spacedim> surface_description(Point<spacedim>(0,0,0));
+
+  Triangulation<spacedim,spacedim> volume_triangulation;
+  GridGenerator::hyper_cube(volume_triangulation,-1,1);
   
+  std::set<types::boundary_id> boundary_ids;
+  boundary_ids.insert (0);
+  GridGenerator::extract_boundary_mesh (volume_triangulation, triangulation, boundary_ids);
+
+
   triangulation.set_all_manifold_ids(0);
+  triangulation.set_manifold (0, surface_description);
   
-  GridTools::transform(std_cxx11::bind(&Ellipsoid<dim,spacedim>::grid_transform, &ellipsoid, std_cxx11::_1), 
-                       triangulation);
-
-  triangulation.set_manifold (0, ellipsoid);
   triangulation.refine_global(global_refinements);
 
   std::cout << "Surface mesh has " << triangulation.n_active_cells()
@@ -706,7 +711,7 @@ template <int spacedim>
 void VectorHelfrichFlow<spacedim>::run ()
 {
   /*{{{*/
-  double a = 1; double b = 1; double c = 4;
+  double a = 1; double b = 1.25; double c = 1.5;
   Point<3> center(0,0,0);
   
   make_grid_and_dofs(a,b,c,center);
@@ -716,7 +721,7 @@ void VectorHelfrichFlow<spacedim>::run ()
   double end_time = 1.0;
   double time_step = 1e-7;
   double max_time_step = 1e-2;
-  double min_time_step = 1e-8;
+  double min_time_step = 1e-12;
   double max_allowable_displacement = 1e-1;
   double max_velo  = 0;
   //double l2_norm_velo  = 0;
@@ -750,7 +755,7 @@ void VectorHelfrichFlow<spacedim>::run ()
       //solve_using_schur();
 
       //max_velo = get_max_norm_wrt_cell(VH.block(0));
-      max_velo = VH.block(0).l2_norm();
+      max_velo = VH.block(0).linfty_norm();
       
       if (time_step*max_velo > max_allowable_displacement)
       {
@@ -769,12 +774,12 @@ void VectorHelfrichFlow<spacedim>::run ()
         
         if (step%20==0) // write output
         {
-          write_solution_step+=1;
           output_results(write_solution_step);
+          write_solution_step+=1;
         }
         std::cout << "max displacement: " << time_step*max_velo  << std::endl;
         //std::cout << "H:                " << get_max_norm_wrt_cell(VH.block(1)) << std::endl;
-        std::cout << "H:                " << VH.block(1).l2_norm() << std::endl;
+        std::cout << "H:                " << VH.block(1).linfty_norm() << std::endl;
         
         move_mesh(time_step,VH.block(0));
         
