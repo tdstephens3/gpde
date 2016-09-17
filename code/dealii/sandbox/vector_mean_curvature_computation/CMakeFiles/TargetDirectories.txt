@@ -1,0 +1,11 @@
+/Users/stephenstd/gpde/code/dealii/sandbox/vector_mean_curvature_computation/CMakeFiles/edit_cache.dir
+/Users/stephenstd/gpde/code/dealii/sandbox/vector_mean_curvature_computation/CMakeFiles/rebuild_cache.dir
+/Users/stephenstd/gpde/code/dealii/sandbox/vector_mean_curvature_computation/CMakeFiles/runclean.dir
+/Users/stephenstd/gpde/code/dealii/sandbox/vector_mean_curvature_computation/CMakeFiles/sign.dir
+/Users/stephenstd/gpde/code/dealii/sandbox/vector_mean_curvature_computation/CMakeFiles/strip_comments.dir
+/Users/stephenstd/gpde/code/dealii/sandbox/vector_mean_curvature_computation/CMakeFiles/run.dir
+/Users/stephenstd/gpde/code/dealii/sandbox/vector_mean_curvature_computation/CMakeFiles/info.dir
+/Users/stephenstd/gpde/code/dealii/sandbox/vector_mean_curvature_computation/CMakeFiles/debug.dir
+/Users/stephenstd/gpde/code/dealii/sandbox/vector_mean_curvature_computation/CMakeFiles/vector_mean_curvature.dir
+/Users/stephenstd/gpde/code/dealii/sandbox/vector_mean_curvature_computation/CMakeFiles/distclean.dir
+/Users/stephenstd/gpde/code/dealii/sandbox/vector_mean_curvature_computation/CMakeFiles/release.dir
