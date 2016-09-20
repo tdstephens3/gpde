@@ -54,7 +54,7 @@
 #include <iostream>
 
 // additional cpp code that is reusable
-#include "../../../utilities/my_manifolds_lib.cc"
+#include "../../utilities/my_manifolds_lib.cc"
 
 namespace Step38
 {
