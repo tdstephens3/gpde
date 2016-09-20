@@ -1,0 +1,70 @@
+% vector_mean_curvature_computation.tex   Sept 18, 2016
+
+\documentclass[10pt]{article}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{hyperref}
+
+%\usepackage{color}
+%\usepackage{graphicx}
+%
+%\usepackage[top=1.25cm, bottom=2cm, left=2.0cm, right=1.5cm]{geometry} 
+%
+%\pdfpagewidth 8.5in
+%\pdfpageheight 11in
+%
+\newcommand{\R}{\mathbb{R}}
+
+\title{Vector Mean Curvature of an Ellipsoid}
+\author{a  \texttt{deal.ii} implementation}
+
+\date{ \today}
+
+%%%%%%%%%%%%
+\begin{document}         %%% <----------  BEGIN DOCUMENT
+%%%%%%%%%%%%
+\maketitle
+
+
+Let $S \subset \R^{d+1}$ be a closed, codimension-1 surface, and let
+$\mathbf{x}_{S}: \hat{S} \to S$ be a parameterization of $S$ from the
+parameteric domain $\hat{S} \subset \R^d$.
+
+For concreteness, let $d = 2$ and put $\hat{S} := [0,2\pi] \times [0,\pi]$, and
+$\mathbf{x}_{S} := \left( a \sin \phi \cos \theta, b \sin \phi \sin \theta , c
+\cos \phi  \right)$.
+
+$\textbf{id}_{S}: S \to S \subset \R^3$ Need to think about $\textbf{id}_{S}$ acting on
+quadrature points $p_{\ell} \in \hat{K}$, so $\textbf{id}_{S}(p_{\ell}) :=
+\textbf{id}_{S}(\mathbf{x}_{K}(p_{\ell}))$
+
+\url{https://www.dealii.org/8.4.1/doxygen/deal.II/group\_\_UpdateFlags.html}
+
+
+\begin{equation}
+   \sum_{\ell = 1}^{N} \left( \nabla_{K} \boldsymbol{\phi}_{i}(p_{\ell}) \,:\,
+   \nabla_{K} \textbf{id}_{K}(p_{\ell}) \right)
+   \, J{\times}W(p_{\ell})
+   \label{}
+\end{equation}
+
+
+\begin{equation}
+   \Delta \,\textbf{id}_{S} = h\boldsymbol{\nu}
+   \label{vector_identity}
+\end{equation}
+
+
+\cite{dealII84}
+
+
+
+
+
+
+\newpage
+\bibliographystyle{plain}
+\bibliography{bib}
+
+\end{document}
