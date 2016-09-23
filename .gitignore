@@ -27,7 +27,6 @@
 # compiled source, logs, and databases #
 ######################
 *.aux
-*.bib
 *.blg
 *.bbl
 *.com
