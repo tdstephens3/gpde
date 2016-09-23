@@ -344,7 +344,6 @@ void LaplaceBeltramiProblem<spacedim>::assemble_system ()
   FullMatrix<double>  cell_matrix (dofs_per_cell, dofs_per_cell);
   Vector<double>      cell_rhs (dofs_per_cell);
 
-  
   const FEValuesExtractors::Vector curv_components(0);
   std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
   
@@ -352,7 +351,7 @@ void LaplaceBeltramiProblem<spacedim>::assemble_system ()
        cell = dof_handler.begin_active(),
        endc = dof_handler.end();
        cell!=endc; ++cell)
-    {
+  {
       cell_matrix = 0;
       cell_rhs    = 0;
 
@@ -361,31 +360,30 @@ void LaplaceBeltramiProblem<spacedim>::assemble_system ()
       for (unsigned int i=0; i<dofs_per_cell; ++i)
         for (unsigned int j=0; j<dofs_per_cell; ++j)
           for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
-          {
-            
+      {
             cell_matrix(i,j) += fe_values[curv_components].value(i,q_point) *
                                 fe_values[curv_components].value(j,q_point) *
                                 fe_values.JxW(q_point);
-          }
+      }
 
       for (unsigned int i=0; i<dofs_per_cell; ++i)
         for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
-        {
-        cell_rhs(i) += scalar_product(fe_values[curv_components].gradient(i,q_point),
-                                      identity_on_manifold.shape_grad(fe_values.normal_vector(q_point)))* 
-                                      fe_values.JxW(q_point);
-        }
+      {
+          cell_rhs(i) += scalar_product(fe_values[curv_components].gradient(i,q_point),
+                                        identity_on_manifold.shape_grad(fe_values.normal_vector(q_point)))* 
+                                        fe_values.JxW(q_point);
+      }
       cell->get_dof_indices (local_dof_indices);
       for (unsigned int i=0; i<dofs_per_cell; ++i)
       {
+        system_rhs(local_dof_indices[i]) += cell_rhs(i);
         for (unsigned int j=0; j<dofs_per_cell; ++j)
           system_matrix.add (local_dof_indices[i],
                              local_dof_indices[j],
                              cell_matrix(i,j));
 
-        system_rhs(local_dof_indices[i]) += cell_rhs(i);
       }
-    }
+  }
   /*}}}*/
 }
 
