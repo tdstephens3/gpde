@@ -1,9 +1,6 @@
 % biomembranes.tex August 2016
 
 \documentclass[10pt]{article}
-\usepackage{amsmath}
-\usepackage{amsfonts}
-\usepackage{amssymb}
 \usepackage{color}
 \usepackage{graphicx}
 \usepackage{customMath}
@@ -24,24 +21,101 @@
 \maketitle
 
 
-\section{Energy models and their first variations}
 
-$\kappa(x) = \kappa_1(x) + \kappa_2(x)$: sum of \emph{principle curvatures}
+% SECTION: 
+\section{Differential Geometry for Surface PDE}
 
-$\kappa_0(x)$: \emph{spontaneous curvature}
+Let $\gamma$ be a smooth, closed codimension-one manifold in $\R^3$ 
 
-$\Gamma \subset \R^3$: 
+parameterized by $\chi : U \subset \R^2 \to \gamma$
 
+unit normal vector $n$, $g = g_{ij}$, $h = h_{ij}$, Laplace-Beltrami operator $\Delta_{\gamma}$,
+surface gradient $\nabla_{\gamma}$
+
+% thm: vector mean curvature
+\begin{theorem}[Vector Mean Curvature]{ $Hn = \Delta\, \emph{id}_\gamma$ }
+   \label{thm:vector_mean_curvature}
+\end{theorem}
+
+\begin{proof}
+\end{proof}
+
+% Numerical Approximation of vector mean curvature
+{\bf Numerical Approximation of vector mean curvature $Hn$:}
+
+\[\langle \phi, \, H n \rangle = \langle \nabla_\gamma \phi, \, \nabla_\gamma\,
+\text{id}_\gamma \rangle \]
+
+
+% SECTION: Evolution Equations on Stationary Surfaces
+\section{Evolution Equations on Stationary Surfaces}
+
+
+% subsection: Heat Equation
+\subsection{Heat Equation}
 
 \begin{equation}
-   \int_{\Gamma} (\kappa(x) - \kappa_{0}(x))^2 \, dS
-   \label{eqn:helfrich_energy_no_constraints}
+   u_t = \kappa \Delta_{\gamma} u
+   \label{eqn:heat}
 \end{equation}
+
+{\bf Weak form:} 
+
+{\bf Discretization:} the $\theta$-method: 
+\begin{equation}
+   \langle \phi_h, \, \frac{u_h^{n+1} - u_h^n}{\tau} \rangle = \langle \phi_h,
+   \, \left[ (1 - \theta)\Delta_\gamma u_h^{n} + \theta
+   \Delta_{\gamma} u_h^{n+1}\right]\rangle
+   \label{disc:heat_theta}
+\end{equation}
+
+
+
+
+% subsection: Allen-Cahn 
+\subsection{Allen-Cahn}
+
+\begin{equation}
+u_t = \eps \Delta_{\gamma} u + \lambda (u - u^3)
+   \label{eqn:heat}
+\end{equation}
+
+
+
+
+% SECTION: Evoling Surfaces
+\section{Evolving Surfaces}
+
+The classical Helfrich model (\ref{eqn:helfrich_energy}) approximates the energy
+required to hold a phospholipid bilayer in a geometric configuration that
+deviates from its preferred, or spontaneuous, curvature. The model also
+includes energy penalties $\lambda$ and
+$\mu$ for changes in surface area and enclosed volume. Treating $\lambda$ and
+$\mu$ as Lagrange multipliers capture the fact that surface area and enclosed
+volume changes happen on a longer timescale than conformational changes.\\
+
+
+
+For $\Gamma \subset \R^3$, a closed smooth codimension-one surface
+\begin{equation}
+   E({\gamma}) := \kappa(x) \int_{\gamma} \left( H(x) - c_{0}(x)\right)^2  + \lambda + \mu\, s
+\cdot n \, dS 
+   \label{eqn:helfrich_energy}
+\end{equation}
+where $H(x) = k_1(x) + k_2(x)$: sum of \emph{principle curvatures} $k_1$ and
+$k_2$, $c_0(x)$: \emph{spontaneous curvature}, and $\kappa(x)$: \emph{bending
+modulus}.
+
 
 \cite{DoganNochetto:2012}
 
-\section{Evolution Equations}
 
+% SECTION: Evolution Equations on Evoling Surfaces
+\section{Evolution Equations on Evolving Surfaces}
+
+
+
+% SECTION: Numerics
 \section{Numerics}
 
 \subsection{Schur Complement}
