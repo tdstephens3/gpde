@@ -27,24 +27,80 @@
 
 Let $\gamma$ be a smooth, closed codimension-one manifold in $\R^3$ 
 
-parameterized by $\chi : U \subset \R^2 \to \gamma$
+For $U \subset \R^2$ with $\xi_1,\xi_2 \in U$, put  $\chi : (\xi_1,\xi_2)
+\mapsto \left( \chi_1(\xi_1,\xi_2), \chi_2(\xi_1,\xi_2), \chi_3(\xi_1,\xi_2)
+\right) \in \gamma$
+
+
+Write the Jacobian of $\chi$ as $D\chi(\xi_1,\xi_2) = \left( \partial_1 \chi,
+\partial_2 \chi \right) := \left(
+\begin{array}{cc}
+  \ds  \frac{\partial \chi_1}{\partial \xi_1} & \ds \frac{\partial \chi_1}{\partial \xi_2} \\ 
+                                          &                                        \\
+  \ds  \frac{\partial \chi_2}{\partial \xi_1} & \ds \frac{\partial \chi_2}{\partial \xi_2} \\ 
+                                          &                                        \\
+  \ds  \frac{\partial \chi_3}{\partial \xi_1} & \ds \frac{\partial \chi_3}{\partial \xi_2} 
+\end{array} \right)$ 
+
+\begin{definition}[Metric Tensor $g_{ij}$, and First Fundamental Form I $: (\lambda^1,
+   \lambda^2) \to \R$] 
+   
+\end{definition}
+
+
+
+\begin{definition}[Curvature Tensor $h_{ij}$, and Second Fundamental Form II $: (\lambda^1,
+   \lambda^2) \to \R$] 
+   
+\end{definition}
+
 
 unit normal vector $n$, $g = g_{ij}$, $h = h_{ij}$, Laplace-Beltrami operator $\Delta_{\gamma}$,
 surface gradient $\nabla_{\gamma}$
 
+
+\begin{definition}[Surface Gradient] Let $\chi : U \to \gamma$ be
+   a smooth parameterization of the surface $\gamma$ over $U \subset \R^2$. For
+   $v : \gamma \to \R$  a smooth function, the 
+   \emph{surface gradient} $\nabla_{\gamma} v = \nabla_\gamma
+   v(\chi(\xi_1,\xi_2))$ is defined as 
+
+   \begin{equation}
+      \nabla_\gamma v(\chi(\xi_1,\xi_2)) := D\chi \, g^{-1} \,\nabla (v \circ
+      \chi)(\xi_1,\xi_2)
+      \label{eqn:surface_grad}
+   \end{equation}
+   
+\end{definition}
+
+
+\begin{definition}[Tangential Divergence]
+   
+\end{definition}
+
+\begin{definition}[Surface Laplacian, the Laplace Beltrami operator] Let $\chi : U \to \gamma$ be
+   a smooth parameterization of the surface $\gamma$ over $U \subset \R^2$. For
+   $v : \gamma \to \R$  a smooth function, the 
+   \emph{surface Laplacian} $\Delta_{\gamma} v = \Delta_\gamma v(\chi(\xi_1,\xi_2))$ is defined as 
+
+   \begin{equation}
+      \Delta_\gamma v(\chi(\xi_1,\xi_2)) := \emph{div}_{\gamma}\, \left( (\nabla_\gamma
+      v)^T \right)
+      \label{eqn:surface_laplacian}
+   \end{equation}
+   
+\end{definition}
+
+
 % thm: vector mean curvature
-\begin{theorem}[Vector Mean Curvature]{ $Hn = \Delta\, \emph{id}_\gamma$ }
+\begin{theorem}[Vector Mean Curvature]{ $Hn = \Delta_{\gamma}\, \emph{id}_\gamma$ }
    \label{thm:vector_mean_curvature}
 \end{theorem}
 
 \begin{proof}
 \end{proof}
 
-% Numerical Approximation of vector mean curvature
-{\bf Numerical Approximation of vector mean curvature $Hn$:}
 
-\[\langle \phi, \, H n \rangle = \langle \nabla_\gamma \phi, \, \nabla_\gamma\,
-\text{id}_\gamma \rangle \]
 
 
 % SECTION: Evolution Equations on Stationary Surfaces
@@ -117,6 +173,25 @@ modulus}.
 
 % SECTION: Numerics
 \section{Numerics}
+
+\subsection{Scalar Finite Elements for Geometric PDE and Evolving Parametric Surfaces}
+
+\subsection{Vector Finite Elements for Geometric PDE and Evolving Parametric Surfaces}
+
+% EXAMPLE: numerical approximation of vector mean curvature
+\begin{example}[Weakly Enforcing an Identity: computing the vector mean curvature
+   on a parametric surface]
+
+{\bf Numerical Approximation of vector mean curvature $Hn$:}
+
+\[\langle \phi, \, H n \rangle = \langle \nabla_\gamma \phi, \, \nabla_\gamma\,
+\text{id}_\gamma \rangle \]
+
+The matrix equation $MH = rhs$, where $rhs_{i} = \sum_{K \in \mcal{T}} \int_{K} \nabla_{\gamma}
+\phi_i : \nabla_{\gamma}\, \text{id}_\gamma \,dx$, $M_{ij} = \sum_{K \in
+   \mcal{T}} \int_{K} \phi_i : \phi_j \, dx$  
+   
+\end{example}
 
 \subsection{Schur Complement}
 
