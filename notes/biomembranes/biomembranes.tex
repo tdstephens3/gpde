@@ -25,12 +25,36 @@
 % SECTION: 
 \section{Differential Geometry for Surface PDE}
 
+Codimension-1 surfaces of dimension $d$ embedded in ($d+1$)-dimensional
+Euclidean space can be described through parameterizations $\chi: \R^d \to
+\R^{d+1}$, or through the level set of a function $b: \R^{d+1} \to \R$.  In
+either case the differential geometry of these surfaces should be expressed in
+terms of the simple formulas of the ambient Euclidean metric space, but this
+requires some work.  The problem is that, unless the surface is completely
+`flat', any distance along the surface must be translated into a distance in
+the Euclidean metric space, and vice versa. To express the change in a function
+value with respect to a change in $x$, one must disambiguate the space in which
+$x$ is allowed to move. If $x$ ranges through the familiar Euclidean metric
+space, then in general it will cover a greater distance along the surface.
+Likewise, if $x$ ranges through a distance along the surface, then in general
+that distance will appear shorter in the direction it moves in Euclidean space.
+These discrepancies must be accounted for in order to compute derivatives of
+non-constant quantities on the surface.  
+
+
+
+\subsection{Differential Geometry for Parametric Surfaces, $\chi : (\xi_1, \ldots,
+   \xi_d) \mapsto \gamma \subset \R^{d+1}$}
+
 Let $\gamma$ be a smooth, closed codimension-one manifold in $\R^3$ 
 
-For $U \subset \R^2$ with $\xi_1,\xi_2 \in U$, put  $\chi : (\xi_1,\xi_2)
+For $V \subset \R^2$ with $\xi_1,\xi_2 \in V$, put  $\chi : (\xi_1,\xi_2)
 \mapsto \left( \chi_1(\xi_1,\xi_2), \chi_2(\xi_1,\xi_2), \chi_3(\xi_1,\xi_2)
-\right) \in \gamma$
+\right) = x \in \gamma$
 
+Denote the tangent space at $x \in \gamma$ by $T_x {\gamma} := \text{span}
+\{ \lambda^1, \lambda^2\}$ where $\lambda_1,\lambda^2$ are linearly independent
+vectors tangent to $\gamma$ at $x$.
 
 Write the Jacobian of $\chi$ as $D\chi(\xi_1,\xi_2) = \left( \partial_1 \chi,
 \partial_2 \chi \right) := \left(
@@ -42,15 +66,13 @@ Write the Jacobian of $\chi$ as $D\chi(\xi_1,\xi_2) = \left( \partial_1 \chi,
   \ds  \frac{\partial \chi_3}{\partial \xi_1} & \ds \frac{\partial \chi_3}{\partial \xi_2} 
 \end{array} \right)$ 
 
-\begin{definition}[Metric Tensor $g_{ij}$, and First Fundamental Form I $: (\lambda^1,
-   \lambda^2) \to \R$] 
+\begin{definition}[Metric Tensor $g_{ij}: x \mapsto \R^{2x2}$, and First Fundamental Form I $: (x;\,\lambda^1, \lambda^2) \in T_x \gamma \to \R$] 
    
 \end{definition}
 
 
 
-\begin{definition}[Curvature Tensor $h_{ij}$, and Second Fundamental Form II $: (\lambda^1,
-   \lambda^2) \to \R$] 
+\begin{definition}[Curvature Tensor $h_{ij}: x \mapsto \R^{2x2}$, and Second Fundamental Form II $: (x; \, \lambda^1, \lambda^2) \in T_x \gamma \to \R$] 
    
 \end{definition}
 
@@ -59,17 +81,35 @@ unit normal vector $n$, $g = g_{ij}$, $h = h_{ij}$, Laplace-Beltrami operator $\
 surface gradient $\nabla_{\gamma}$
 
 
-\begin{definition}[Surface Gradient] Let $\chi : U \to \gamma$ be
-   a smooth parameterization of the surface $\gamma$ over $U \subset \R^2$. For
+\begin{definition}[Surface Gradient] Let $\chi : V \to \gamma$ be
+   a smooth parameterization of the surface $\gamma$ over $V \subset \R^2$. For
    $v : \gamma \to \R$  a smooth function, the 
    \emph{surface gradient} $\nabla_{\gamma} v = \nabla_\gamma
    v(\chi(\xi_1,\xi_2))$ is defined as 
 
-   \begin{equation}
-      \nabla_\gamma v(\chi(\xi_1,\xi_2)) := D\chi \, g^{-1} \,\nabla (v \circ
-      \chi)(\xi_1,\xi_2)
+   \begin{align}
+      \nabla_\gamma v(\chi(\xi_1,\xi_2)) 
+      :&= D\chi \, g^{-1} \,\nabla (v \circ \chi)(\xi_1,\xi_2) \\
+      &= \left( 
+         \begin{array}{cc}
+           \frac{\partial \chi_1}{\partial \xi_1} &  \frac{\partial \chi_1}{\partial \xi_2} \\ 
+           \frac{\partial \chi_2}{\partial \xi_1} &  \frac{\partial \chi_2}{\partial \xi_2} \\ 
+           \frac{\partial \chi_3}{\partial \xi_1} &  \frac{\partial \chi_3}{\partial \xi_2} 
+         \end{array} \right)
+         \left(
+         \begin{array}{cc}    
+            g^{11} & g^{12} \\
+            g^{21} & g^{22} 
+         \end{array} \right)
+         \left(
+         \begin{array}{c}    
+            \frac{\partial v}{\partial \xi_1} \\
+            \frac{\partial v}{\partial \xi_2}
+         \end{array} \right)
       \label{eqn:surface_grad}
-   \end{equation}
+   \end{align}
+
+   Notice that this entire computation is made in $V \subset \R^2$.  
    
 \end{definition}
 
@@ -78,8 +118,8 @@ surface gradient $\nabla_{\gamma}$
    
 \end{definition}
 
-\begin{definition}[Surface Laplacian, the Laplace Beltrami operator] Let $\chi : U \to \gamma$ be
-   a smooth parameterization of the surface $\gamma$ over $U \subset \R^2$. For
+\begin{definition}[Surface Laplacian, the Laplace Beltrami operator] Let $\chi : V \to \gamma$ be
+   a smooth parameterization of the surface $\gamma$ over $V \subset \R^2$. For
    $v : \gamma \to \R$  a smooth function, the 
    \emph{surface Laplacian} $\Delta_{\gamma} v = \Delta_\gamma v(\chi(\xi_1,\xi_2))$ is defined as 
 
@@ -93,13 +133,15 @@ surface gradient $\nabla_{\gamma}$
 
 
 % thm: vector mean curvature
-\begin{theorem}[Vector Mean Curvature]{ $Hn = \Delta_{\gamma}\, \emph{id}_\gamma$ }
+\begin{theorem}[Vector Mean Curvature]{ $Hn = - \Delta_{\gamma}\, \emph{id}_\gamma$ }
    \label{thm:vector_mean_curvature}
 \end{theorem}
 
 \begin{proof}
 \end{proof}
 
+\subsection{Differential Geometry for Surfaces Defined through Level Sets,
+   $\gamma := \set{x \in \R^{d+1} \st b(x) = 0}$}
 
 
 
