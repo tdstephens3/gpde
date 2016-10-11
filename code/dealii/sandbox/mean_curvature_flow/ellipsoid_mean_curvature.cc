@@ -163,7 +163,7 @@ template <int spacedim>
 Tensor<1,spacedim> Identity<spacedim>::shape_grad_component(const Tensor<1,spacedim> &unit_normal, const unsigned int component) const
 {
   /*{{{*/
-  Tensor<2,spacedim> full_shape_grad = shape_grad(unit_normal);
+  Tensor<2,spacedim> full_shape_grad = Identity<spacedim>::shape_grad(unit_normal);
   Tensor<1,spacedim> grad_component;
 
   grad_component[0] = full_shape_grad[component][0];

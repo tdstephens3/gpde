@@ -1,9 +1,6 @@
 % biomembranes.tex August 2016
 
 \documentclass[10pt]{article}
-\usepackage{amsmath}
-\usepackage{amsfonts}
-\usepackage{amssymb}
 \usepackage{color}
 \usepackage{graphicx}
 \usepackage{customMath}
@@ -24,25 +21,219 @@
 \maketitle
 
 
-\section{Energy models and their first variations}
 
-$\kappa(x) = \kappa_1(x) + \kappa_2(x)$: sum of \emph{principle curvatures}
+% SECTION: 
+\section{Differential Geometry for Surface PDE}
 
-$\kappa_0(x)$: \emph{spontaneous curvature}
+Codimension-1 surfaces of dimension $d$ embedded in ($d+1$)-dimensional
+Euclidean space can be described through parameterizations $\chi: \R^d \to
+\R^{d+1}$, or through the level set of a function $b: \R^{d+1} \to \R$.  In
+either case the differential geometry of these surfaces should be expressed in
+terms of the simple formulas of the ambient Euclidean metric space, but this
+requires some work.  The problem is that, unless the surface is completely
+`flat', any distance along the surface must be translated into a distance in
+the Euclidean metric space, and vice versa. To express the change in a function
+value with respect to a change in $x$, one must disambiguate the space in which
+$x$ is allowed to move. If $x$ ranges through the familiar Euclidean metric
+space, then in general it will cover a greater distance along the surface.
+Likewise, if $x$ ranges through a distance along the surface, then in general
+that distance will appear shorter in the direction it moves in Euclidean space.
+These discrepancies must be accounted for in order to compute derivatives of
+non-constant quantities on the surface.  
 
-$\Gamma \subset \R^3$: 
 
+
+\subsection{Differential Geometry for Parametric Surfaces, $\chi : (\xi_1, \ldots,
+   \xi_d) \mapsto \gamma \subset \R^{d+1}$}
+
+Let $\gamma$ be a smooth, closed codimension-one manifold in $\R^3$ 
+
+For $V \subset \R^2$ with $\xi_1,\xi_2 \in V$, put  $\chi : (\xi_1,\xi_2)
+\mapsto \left( \chi_1(\xi_1,\xi_2), \chi_2(\xi_1,\xi_2), \chi_3(\xi_1,\xi_2)
+\right) = x \in \gamma$
+
+Denote the tangent space at $x \in \gamma$ by $T_x {\gamma} := \text{span}
+\{ \lambda^1, \lambda^2\}$ where $\lambda_1,\lambda^2$ are linearly independent
+vectors tangent to $\gamma$ at $x$.
+
+Write the Jacobian of $\chi$ as $D\chi(\xi_1,\xi_2) = \left( \partial_1 \chi,
+\partial_2 \chi \right) := \left(
+\begin{array}{cc}
+  \ds  \frac{\partial \chi_1}{\partial \xi_1} & \ds \frac{\partial \chi_1}{\partial \xi_2} \\ 
+                                          &                                        \\
+  \ds  \frac{\partial \chi_2}{\partial \xi_1} & \ds \frac{\partial \chi_2}{\partial \xi_2} \\ 
+                                          &                                        \\
+  \ds  \frac{\partial \chi_3}{\partial \xi_1} & \ds \frac{\partial \chi_3}{\partial \xi_2} 
+\end{array} \right)$ 
+
+\begin{definition}[Metric Tensor $g_{ij}: x \mapsto \R^{2x2}$, and First Fundamental Form I $: (x;\,\lambda^1, \lambda^2) \in T_x \gamma \to \R$] 
+   
+\end{definition}
+
+
+
+\begin{definition}[Curvature Tensor $h_{ij}: x \mapsto \R^{2x2}$, and Second Fundamental Form II $: (x; \, \lambda^1, \lambda^2) \in T_x \gamma \to \R$] 
+   
+\end{definition}
+
+
+unit normal vector $n$, $g = g_{ij}$, $h = h_{ij}$, Laplace-Beltrami operator $\Delta_{\gamma}$,
+surface gradient $\nabla_{\gamma}$
+
+
+\begin{definition}[Surface Gradient] Let $\chi : V \to \gamma$ be
+   a smooth parameterization of the surface $\gamma$ over $V \subset \R^2$. For
+   $v : \gamma \to \R$  a smooth function, the 
+   \emph{surface gradient} $\nabla_{\gamma} v = \nabla_\gamma
+   v(\chi(\xi_1,\xi_2))$ is defined as 
+
+   \begin{align}
+      \nabla_\gamma v(\chi(\xi_1,\xi_2)) 
+      :&= D\chi \, g^{-1} \,\nabla (v \circ \chi)(\xi_1,\xi_2) \\
+      &= \left( 
+         \begin{array}{cc}
+           \frac{\partial \chi_1}{\partial \xi_1} &  \frac{\partial \chi_1}{\partial \xi_2} \\ 
+           \frac{\partial \chi_2}{\partial \xi_1} &  \frac{\partial \chi_2}{\partial \xi_2} \\ 
+           \frac{\partial \chi_3}{\partial \xi_1} &  \frac{\partial \chi_3}{\partial \xi_2} 
+         \end{array} \right)
+         \left(
+         \begin{array}{cc}    
+            g^{11} & g^{12} \\
+            g^{21} & g^{22} 
+         \end{array} \right)
+         \left(
+         \begin{array}{c}    
+            \frac{\partial v}{\partial \xi_1} \\
+            \frac{\partial v}{\partial \xi_2}
+         \end{array} \right)
+      \label{eqn:surface_grad}
+   \end{align}
+
+   Notice that this entire computation is made in $V \subset \R^2$.  
+   
+\end{definition}
+
+
+\begin{definition}[Tangential Divergence]
+   
+\end{definition}
+
+\begin{definition}[Surface Laplacian, the Laplace Beltrami operator] Let $\chi : V \to \gamma$ be
+   a smooth parameterization of the surface $\gamma$ over $V \subset \R^2$. For
+   $v : \gamma \to \R$  a smooth function, the 
+   \emph{surface Laplacian} $\Delta_{\gamma} v = \Delta_\gamma v(\chi(\xi_1,\xi_2))$ is defined as 
+
+   \begin{equation}
+      \Delta_\gamma v(\chi(\xi_1,\xi_2)) := \emph{div}_{\gamma}\, \left( (\nabla_\gamma
+      v)^T \right)
+      \label{eqn:surface_laplacian}
+   \end{equation}
+   
+\end{definition}
+
+
+% thm: vector mean curvature
+\begin{theorem}[Vector Mean Curvature]{ $Hn = - \Delta_{\gamma}\, \emph{id}_\gamma$ }
+   \label{thm:vector_mean_curvature}
+\end{theorem}
+
+\begin{proof}
+\end{proof}
+
+\subsection{Differential Geometry for Surfaces Defined through Level Sets,
+   $\gamma := \set{x \in \R^{d+1} \st b(x) = 0}$}
+
+
+
+% SECTION: Evolution Equations on Stationary Surfaces
+\section{Evolution Equations on Stationary Surfaces}
+
+
+% subsection: Heat Equation
+\subsection{Heat Equation}
 
 \begin{equation}
-   \int_{\Gamma} (\kappa(x) - \kappa_{0}(x))^2 \, dS
-   \label{eqn:helfrich_energy_no_constraints}
+   u_t = \kappa \Delta_{\gamma} u
+   \label{eqn:heat}
 \end{equation}
+
+{\bf Weak form:} 
+
+{\bf Discretization:} the $\theta$-method: 
+\begin{equation}
+   \langle \phi_h, \, \frac{u_h^{n+1} - u_h^n}{\tau} \rangle = \langle \phi_h,
+   \, \left[ (1 - \theta)\Delta_\gamma u_h^{n} + \theta
+   \Delta_{\gamma} u_h^{n+1}\right]\rangle
+   \label{disc:heat_theta}
+\end{equation}
+
+
+
+
+% subsection: Allen-Cahn 
+\subsection{Allen-Cahn}
+
+\begin{equation}
+u_t = \eps \Delta_{\gamma} u + \lambda (u - u^3)
+   \label{eqn:heat}
+\end{equation}
+
+
+
+
+% SECTION: Evoling Surfaces
+\section{Evolving Surfaces}
+
+The classical Helfrich model (\ref{eqn:helfrich_energy}) approximates the energy
+required to hold a phospholipid bilayer in a geometric configuration that
+deviates from its preferred, or spontaneuous, curvature. The model also
+includes energy penalties $\lambda$ and
+$\mu$ for changes in surface area and enclosed volume. Treating $\lambda$ and
+$\mu$ as Lagrange multipliers capture the fact that surface area and enclosed
+volume changes happen on a longer timescale than conformational changes.\\
+
+
+
+For $\Gamma \subset \R^3$, a closed smooth codimension-one surface
+\begin{equation}
+   E({\gamma}) := \kappa(x) \int_{\gamma} \left( H(x) - c_{0}(x)\right)^2  + \lambda + \mu\, s
+\cdot n \, dS 
+   \label{eqn:helfrich_energy}
+\end{equation}
+where $H(x) = k_1(x) + k_2(x)$: sum of \emph{principle curvatures} $k_1$ and
+$k_2$, $c_0(x)$: \emph{spontaneous curvature}, and $\kappa(x)$: \emph{bending
+modulus}.
+
 
 \cite{DoganNochetto:2012}
 
-\section{Evolution Equations}
 
+% SECTION: Evolution Equations on Evoling Surfaces
+\section{Evolution Equations on Evolving Surfaces}
+
+
+
+% SECTION: Numerics
 \section{Numerics}
+
+\subsection{Scalar Finite Elements for Geometric PDE and Evolving Parametric Surfaces}
+
+\subsection{Vector Finite Elements for Geometric PDE and Evolving Parametric Surfaces}
+
+% EXAMPLE: numerical approximation of vector mean curvature
+\begin{example}[Weakly Enforcing an Identity: computing the vector mean curvature
+   on a parametric surface]
+
+{\bf Numerical Approximation of vector mean curvature $Hn$:}
+
+\[\langle \phi, \, H n \rangle = \langle \nabla_\gamma \phi, \, \nabla_\gamma\,
+\text{id}_\gamma \rangle \]
+
+The matrix equation $MH = rhs$, where $rhs_{i} = \sum_{K \in \mcal{T}} \int_{K} \nabla_{\gamma}
+\phi_i : \nabla_{\gamma}\, \text{id}_\gamma \,dx$, $M_{ij} = \sum_{K \in
+   \mcal{T}} \int_{K} \phi_i : \phi_j \, dx$  
+   
+\end{example}
 
 \subsection{Schur Complement}
 
