@@ -36,6 +36,7 @@
 #include <deal.II/lac/solver_control.h>
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/solver_gmres.h>
+#include <deal.II/lac/sparse_direct.h>
 #include <deal.II/lac/precondition.h>
 #include <deal.II/lac/precondition_block.h>
 #include <deal.II/lac/iterative_inverse.h>
@@ -51,6 +52,7 @@
 #include <deal.II/dofs/dof_renumbering.h>
 #include <deal.II/fe/fe_system.h>
 #include <deal.II/fe/fe_values.h>
+#include <deal.II/fe/fe_nothing.h>
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/vector_tools.h>
 #include <deal.II/numerics/matrix_tools.h>
@@ -87,8 +89,12 @@ class VectorHelfrichFlow
     void output_results (int &step);
     void solve_using_gmres(); 
     void solve_using_schur(); 
+    void solve_using_umfpack(); 
     //void compute_error (double, double, double, Point<3>) const;
     double get_max_norm_wrt_cell(Vector<double>); 
+    double compute_min_mesh_diam();
+    double compute_surface_area();
+    double compute_volume();
     void write_matrices();
   
   
@@ -619,6 +625,123 @@ void VectorHelfrichFlow<spacedim>::solve_using_gmres()
 }
 
 template <int spacedim>
+void VectorHelfrichFlow<spacedim>::solve_using_umfpack() 
+{
+/*{{{*/
+  // equation: system_matrix*VH = system_rhs
+  std::cout << "using SparseDirectUMFPACK" << std::endl;
+  
+  SparseDirectUMFPACK A_direct;
+  
+  A_direct.initialize(system_matrix);
+
+  A_direct.vmult(VH, system_rhs);
+  
+  //try
+  //{
+  //  
+  //  //std::cout << solver_control.last_step()
+  //  //          << "  gmres iterations to obtain convergence.\n"
+  //  //          << "  last value: "
+  //  //          << solver_control.last_value()
+  //  //          << "\n  last check: "
+  //  //          << solver_control.last_check()
+  //  //          << std::endl;
+  //}
+  //catch (dealii::SolverControl::NoConvergence &nc)
+  //{
+  //  std::cout << solver_control.last_step()
+  //            << "  gmres iterations to obtain convergence.\n"
+  //            << "  last value: "
+  //            << solver_control.last_value()
+  //            << "\n  last check"
+  //            << solver_control.last_check()
+  //            << std::endl;
+  //  throw nc;
+  //}
+/*}}}*/
+}
+
+template <int spacedim>
+double VectorHelfrichFlow<spacedim>::compute_min_mesh_diam ()
+{
+  /*{{{*/
+  double diam = 0;
+  double min_diam = 1E9;
+  for (typename DoFHandler<dim,spacedim>::active_cell_iterator
+       cell = dof_handler.begin_active(),
+       endc = dof_handler.end();
+       cell!=endc; ++cell)
+  { 
+    diam = cell->diameter();
+    if (diam < min_diam)
+      min_diam = diam;
+  }
+  return min_diam;
+  /*}}}*/
+}
+
+  template <int spacedim>
+double VectorHelfrichFlow<spacedim>::compute_surface_area ()
+{
+  /*{{{*/
+  double surface_area = GridTools::volume(triangulation,mapping);
+  return surface_area;
+  /*}}}*/
+}
+
+template<int spacedim>
+double VectorHelfrichFlow<spacedim>::compute_volume ()
+{
+/*{{{*/
+  
+  // initialize an appropriate quadrature formula
+  const QGauss<dim> quadrature_formula (mapping.get_degree() + 1);
+  const unsigned int n_q_points = quadrature_formula.size();
+  
+  // we really want the JxW values from the FEValues object, but it
+  // wants a finite element. create a cheap element as a dummy
+  // element
+  FE_Nothing<dim,spacedim> dummy_fe;
+  FEValues<dim,spacedim> fe_values (mapping, dummy_fe, quadrature_formula,
+                                    update_JxW_values | update_normal_vectors);
+  
+  typename Triangulation<dim,spacedim>::active_cell_iterator
+  cell = triangulation.begin_active(),
+  endc = triangulation.end();
+   
+  double cell_area = 0;
+  double volume = 0;
+  
+  // compute the integral quantities by quadrature
+  for (; cell!=endc; ++cell)
+  {
+    fe_values.reinit (cell);
+    Point<spacedim> sum_of_verts(0.0,0.0,0.0);
+    Point<spacedim> center_point;
+    
+    for (int v=0; v<4; ++v)
+      sum_of_verts += cell->vertex(v);
+    center_point = sum_of_verts/4.0;
+    
+    //Tensor<1,spacedim> q_normal({0,0,0});
+    //Tensor<1,spacedim> unit_normal;
+    Point<spacedim> q_normal(0,0,0);
+    Point<spacedim> unit_normal;
+    cell_area = 0;
+    for (unsigned int q=0; q<n_q_points; ++q)
+    {
+      q_normal  += fe_values.normal_vector(q);
+      cell_area += fe_values.JxW(q);
+    }
+    unit_normal = -q_normal/n_q_points; 
+    volume += cell_area*center_point*unit_normal;
+  }
+  return (1.0/3.0)*volume;
+/*}}}*/
+}
+
+template <int spacedim>
 void VectorHelfrichFlow<spacedim>::write_matrices() 
 {
   std::ofstream A_file, B_file, C_file, D_file, rhs0_file, rhs1_file;
@@ -706,7 +829,7 @@ template <int spacedim>
 void VectorHelfrichFlow<spacedim>::run ()
 {
   /*{{{*/
-  double a = 1; double b = 1; double c = 4;
+  double a = 1; double b = 2; double c = 3;
   Point<3> center(0,0,0);
   
   make_grid_and_dofs(a,b,c,center);
@@ -714,24 +837,41 @@ void VectorHelfrichFlow<spacedim>::run ()
             
   double time = 0.0;
   double end_time = 1.0;
-  double time_step = 1e-7;
+  double time_step = 1e-4;
   double max_time_step = 1e-2;
   double min_time_step = 1e-8;
-  double max_allowable_displacement = 1e-1;
+  double max_allowable_displacement = 0.5e-1;
   double max_velo  = 0;
   //double l2_norm_velo  = 0;
-  bool write_mats = false;
+  bool write_mats              = false;
+  bool compute_mesh_statistics = true;
+  double min_mesh_diam      = 0;
+  double init_surface_area  = 0;
+  double delta_surface_area = 0;
+  double init_volume        = 0;
+  double delta_volume       = 0;
+
   
   int step = 0, write_solution_step = 0;
-  output_results(write_solution_step);
+  //output_results(write_solution_step);
+  if (compute_mesh_statistics) {
+    init_surface_area = compute_surface_area();
+    init_volume       = compute_volume();
+  }
   while (time < end_time && time_step >= min_time_step)
   {
     /*{{{*/
     
     std::cout << "\n===================" << std::endl;
-    printf("iteration:    %d\n", step);
-    printf("current time: %0.9f\n", time);
-    printf("time_step:    %0.9f\n", time_step);
+    printf("iteration:         %d\n", step);
+    printf("current time:      %0.9f\n", time);
+    printf("time_step:         %0.9f\n", time_step);
+    if (compute_mesh_statistics) 
+    {
+      printf("min mesh diam:     %0.9f\n", min_mesh_diam);
+      printf("delta surf. area:  %+0.3f %%\n", delta_surface_area);
+      printf("delta volume:      %+0.3f %%\n", delta_volume);
+    }
     std::cout << "-------------------" << std::endl;
     
     assemble_system(time_step);
@@ -742,11 +882,11 @@ void VectorHelfrichFlow<spacedim>::run ()
     
     if (write_mats)
       write_matrices();
-
      
     try
     {
-      solve_using_gmres();
+      //solve_using_gmres();
+      solve_using_umfpack();
       //solve_using_schur();
 
       //max_velo = get_max_norm_wrt_cell(VH.block(0));
@@ -767,16 +907,22 @@ void VectorHelfrichFlow<spacedim>::run ()
         std::cout << "          success!" << std::endl;
         std::cout << "........." << std::endl;
         
-        if (step%20==0) // write output
+        if (step%1==0) // write output
         {
           write_solution_step+=1;
           output_results(write_solution_step);
         }
         std::cout << "max displacement: " << time_step*max_velo  << std::endl;
         //std::cout << "H:                " << get_max_norm_wrt_cell(VH.block(1)) << std::endl;
-        std::cout << "H:                " << VH.block(1).l2_norm() << std::endl;
+        std::cout << "H.l2_norm:        " << VH.block(1).l2_norm() << std::endl;
         
         move_mesh(time_step,VH.block(0));
+
+        if (compute_mesh_statistics) {
+          min_mesh_diam      = compute_min_mesh_diam();
+          delta_surface_area = (compute_surface_area() - init_surface_area)/init_surface_area;
+          delta_volume       = (compute_volume() - init_volume)/init_volume;
+        }
         
         step += 1;
         time += time_step;   
