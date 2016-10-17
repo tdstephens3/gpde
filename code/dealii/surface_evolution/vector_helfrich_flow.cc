@@ -927,7 +927,7 @@ void VectorHelfrichFlow<spacedim>::run ()
         step += 1;
         time += time_step;   
         
-        if (step%10==0)  // increase time step
+        if (step%100==0)  // increase time step
         {
           std::cout << "increasing time_step" << std::endl;
           time_step = std::min(1.25*time_step,max_time_step);
