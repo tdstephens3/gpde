@@ -323,18 +323,6 @@ void VectorHelfrichFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
             << " degrees of freedom."
             << std::endl;
 
-  /*
-   *    [   M      L-2*hL+0.5*d ][ V_n+1 ]   [  0  ]
-   *    |                       ||       | = |     |
-   *    [ -zn*L          M      ][ H_n+1 ]   [ rhs ]
-   *
-   *    system_matrix*VH = system_rhs
-   *    
-   *    system_matrix has size 2*n_dofs x 2*n_dofs, 
-   *    each block has size n_dofs x n_dofs, and
-   *    rhs has size n_dofs
-   *
-   */
 
   BlockDynamicSparsityPattern dsp (2,2);
   dsp.block(0,0).reinit (dof_handler.n_dofs(), dof_handler.n_dofs());
@@ -369,6 +357,20 @@ template <int spacedim>
 void VectorHelfrichFlow<spacedim>::assemble_system (double zn)
 {
   /*{{{*/
+  
+  /*
+   *    [   M      L-2*hL+0.5*d ][ V_n+1 ]   [  0  ]
+   *    |                       ||       | = |     |
+   *    [ -zn*L          M      ][ H_n+1 ]   [ rhs ]
+   *
+   *    system_matrix*VH = system_rhs
+   *    
+   *    system_matrix has size 2*n_dofs x 2*n_dofs, 
+   *    each block has size n_dofs x n_dofs, and
+   *    rhs has size n_dofs
+   *
+   */
+  
   system_matrix = 0;
   VH = 0;
   system_rhs = 0;
@@ -511,7 +513,7 @@ void VectorHelfrichFlow<spacedim>::output_results (int &step)
   data_out.build_patches (mapping,
                           mapping.get_degree());
 
-  std::string filename ("./data/test_willmore_flow-" + Utilities::int_to_string(step, 5));
+  std::string filename ("./data/sphere_with_L_test_willmore_flow-" + Utilities::int_to_string(step, 5));
   filename += ".vtk";
   std::ofstream output (filename.c_str());
   data_out.write_vtk (output);
@@ -829,7 +831,7 @@ template <int spacedim>
 void VectorHelfrichFlow<spacedim>::run ()
 {
   /*{{{*/
-  double a = 1; double b = 2; double c = 3;
+  double a = 1; double b = 1; double c = 1;
   Point<3> center(0,0,0);
   
   make_grid_and_dofs(a,b,c,center);
@@ -837,10 +839,10 @@ void VectorHelfrichFlow<spacedim>::run ()
             
   double time = 0.0;
   double end_time = 1.0;
-  double time_step = 1e-4;
+  double time_step = 1e-5;
   double max_time_step = 1e-2;
   double min_time_step = 1e-8;
-  double max_allowable_displacement = 0.5e-1;
+  double max_allowable_displacement = 1e-1;
   double max_velo  = 0;
   //double l2_norm_velo  = 0;
   bool write_mats              = false;
