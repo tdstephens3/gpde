@@ -370,16 +370,16 @@ void VectorHelfrichFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
   /*{{{*/
   
 
-  //static SphericalManifold<dim,spacedim> sphere;
-  static Ellipsoid<dim,spacedim> ellipsoid(a,b,c,center);
+  static SphericalManifold<dim,spacedim> sphere;
+  //static Ellipsoid<dim,spacedim> ellipsoid(a,b,c,center);
 
   GridGenerator::hyper_sphere(triangulation);
   
-  GridTools::transform(std_cxx11::bind(&Ellipsoid<dim,spacedim>::grid_transform, &ellipsoid, std_cxx11::_1), 
-                       triangulation);
+  //GridTools::transform(std_cxx11::bind(&Ellipsoid<dim,spacedim>::grid_transform, &ellipsoid, std_cxx11::_1), 
+  //                     triangulation);
 
   triangulation.set_all_manifold_ids(0);
-  triangulation.set_manifold (0, ellipsoid);
+  triangulation.set_manifold (0, sphere);
   
   triangulation.refine_global(global_refinements);
 
@@ -425,7 +425,7 @@ void VectorHelfrichFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
  
   deformation.reinit (dof_handler.n_dofs());
   deformation = 0;
-  //VectorTools::interpolate(MappingQ<2,3>(3), dof_handler, 
+  //VectorTools::interpolate(MappingQ<2,3>(2), dof_handler, 
   //                         /*Identity<spacedim>(),*/
   //                         Initial_map_sphere_to_ellipsoid<spacedim>(a,b,c),
   //                         deformation);                               
@@ -460,6 +460,7 @@ VectorHelfrichFlow<spacedim>::assemble_system (double zn)
   /* create an interpolation of the transformation that takes the sphere to the
    * ellipsoid, this will be updated at each mesh movement */
   
+  deformation = 0;
   MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, dof_handler, deformation);
   MappingQ<dim,spacedim> mappingq(2);
   
