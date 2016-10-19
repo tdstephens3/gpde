@@ -53,6 +53,7 @@
 #include <deal.II/fe/fe_system.h>
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/fe/fe_nothing.h>
+#include <deal.II/fe/mapping_q_eulerian.h>
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/vector_tools.h>
 #include <deal.II/numerics/matrix_tools.h>
@@ -84,17 +85,17 @@ class VectorHelfrichFlow
     static const unsigned int dim = spacedim-1;
   
     void make_grid_and_dofs (double,double,double,Point<spacedim>);
-    void assemble_system (double);
-    void move_mesh (double, Vector<double>) const;
-    void output_results (int &step);
+    MappingQEulerian<2,Vector<double>,spacedim> assemble_system (double);
+    void move_mesh (double, Vector<double>);
+    void output_results (int &step, MappingQEulerian<2,Vector<double>,spacedim> mapping);
     void solve_using_gmres(); 
     void solve_using_schur(); 
     void solve_using_umfpack(); 
     //void compute_error (double, double, double, Point<3>) const;
     double get_max_norm_wrt_cell(Vector<double>); 
     double compute_min_mesh_diam();
-    double compute_surface_area();
-    double compute_volume();
+    double compute_surface_area(MappingQEulerian<2,Vector<double>,spacedim>);
+    double compute_volume(MappingQEulerian<2,Vector<double>,spacedim>);
     void write_matrices();
   
   
@@ -103,8 +104,10 @@ class VectorHelfrichFlow
     double                        fe_degree;
     const unsigned int            global_refinements = 3;
     DoFHandler<dim,spacedim>      dof_handler;
-    MappingQ<dim, spacedim>       mapping;
-  
+    
+    //MappingQ<dim, spacedim>       mapping;
+    Vector<double>                deformation;
+    
     BlockSparsityPattern          block_sparsity_pattern;
     
     BlockSparseMatrix<double>     system_matrix;
@@ -114,7 +117,8 @@ class VectorHelfrichFlow
     //Vector<double>                computed_mean_curvature_squared;
     //Vector<double>                computed_velocity_squared;
     //Vector<double>                exact_mean_curvature_squared;
-    double kappa = 1;
+    double kappa = 1;  // bending modulus
+    double max_disp = 0;
     /*}}}*/
 };
 
@@ -251,6 +255,65 @@ Tensor<1,spacedim> Identity<spacedim>::shape_grad_component(const Tensor<1,space
   /*}}}*/
 }
 
+template <int spacedim>
+class Initial_map_sphere_to_ellipsoid: public Function<spacedim>
+{
+/*{{{*/
+  public:
+    Initial_map_sphere_to_ellipsoid(double a, double b, double c) : Function<spacedim>(3), abc_coeffs{a,b,c}  {}
+    
+    virtual void vector_value_list (const std::vector<Point<spacedim> > &points,
+                                            std::vector<Vector<double> >   &value_list) const;
+    virtual void vector_value (const Point<spacedim> &p, Vector<double> &value) const;
+    virtual double value (const Point<spacedim> &p, const unsigned int component = 0) const;
+  private:
+    double abc_coeffs[3];
+/*}}}*/
+};
+
+template<int spacedim>
+double Initial_map_sphere_to_ellipsoid<spacedim>::value(const Point<spacedim> &p, const unsigned int component)  const
+{
+  /*{{{*/
+  //double new_point = abc_coeffs[component]*p(component);
+
+  //std::cout << "space point: " << p << std::endl;
+  //std::cout << "coeffs: " << abc_coeffs[0] << abc_coeffs[1]<< abc_coeffs[2] << std::endl;
+
+  //std::cout << "new point: (" 
+  //          << abc_coeffs[0]*p(0) <<","
+  //          << abc_coeffs[1]*p(1)<<","
+  //          << abc_coeffs[2]*p(2)<<")"<< std::endl;
+
+  return abc_coeffs[component]*p(component) - p(component);   
+  //return p(component);
+  /*}}}*/
+}
+
+template<int spacedim>
+void Initial_map_sphere_to_ellipsoid<spacedim>::vector_value(const Point<spacedim> &p, Vector<double> &value) const
+{
+  /*{{{*/
+  for (unsigned int c=0; c<this->n_components; ++c) 
+  {
+    value(c) = Initial_map_sphere_to_ellipsoid<spacedim>::value(p,c);
+  }
+  /*}}}*/
+}
+
+template <int spacedim>
+void Initial_map_sphere_to_ellipsoid<spacedim>::vector_value_list (const std::vector<Point<spacedim> > &points,
+                                            std::vector<Vector<double> >   &value_list) const
+{
+  /*{{{*/
+  Assert (value_list.size() == points.size(),
+          ExcDimensionMismatch (value_list.size(), points.size()));
+  const unsigned int n_points = points.size();
+  for (unsigned int p=0; p<n_points; ++p)
+    Initial_map_sphere_to_ellipsoid<spacedim>::vector_value (points[p], value_list[p]);
+  /*}}}*/
+}
+
 class SchurComplement : public Subscriptor
 {
 public:
@@ -290,24 +353,34 @@ template <int spacedim>
 VectorHelfrichFlow<spacedim>::VectorHelfrichFlow (const unsigned int fe_degree)
   :
   fe(FE_Q<dim,spacedim>(fe_degree),spacedim),
-  dof_handler(triangulation),
-  mapping (fe_degree)
-{}
+  dof_handler(triangulation)
+  //mapping(fe_degree)
+  //mapping (?) cannot explicity instantiate MappingQEulerian without dof_handler
+{
+  //double a = 1; double b = 2; double c = 3;
+  //Point<3> center(0,0,0);
+  //
+  //make_grid_and_dofs(a,b,c,center);
+  //std::cout << "grid and dofs made " << std::endl;
+}
 
 template <int spacedim>
 void VectorHelfrichFlow<spacedim>::make_grid_and_dofs (double a, double b, double c, Point<spacedim> center)
 {
   /*{{{*/
+  
+
+  //static SphericalManifold<dim,spacedim> sphere;
   static Ellipsoid<dim,spacedim> ellipsoid(a,b,c,center);
 
-  GridGenerator::hyper_sphere(triangulation,center, 1);
-  
-  triangulation.set_all_manifold_ids(0);
+  GridGenerator::hyper_sphere(triangulation);
   
   GridTools::transform(std_cxx11::bind(&Ellipsoid<dim,spacedim>::grid_transform, &ellipsoid, std_cxx11::_1), 
                        triangulation);
 
+  triangulation.set_all_manifold_ids(0);
   triangulation.set_manifold (0, ellipsoid);
+  
   triangulation.refine_global(global_refinements);
 
   std::cout << "Surface mesh has " << triangulation.n_active_cells()
@@ -317,12 +390,12 @@ void VectorHelfrichFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
             << std::endl;
 
   dof_handler.distribute_dofs (fe);
-  DoFRenumbering::component_wise(dof_handler);
+  //DoFRenumbering::component_wise(dof_handler);
+  
 
   std::cout << "Surface mesh has " << dof_handler.n_dofs()
             << " degrees of freedom."
             << std::endl;
-
 
   BlockDynamicSparsityPattern dsp (2,2);
   dsp.block(0,0).reinit (dof_handler.n_dofs(), dof_handler.n_dofs());
@@ -348,13 +421,21 @@ void VectorHelfrichFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
   system_rhs.block(0).reinit (dof_handler.n_dofs());
   system_rhs.block(1).reinit (dof_handler.n_dofs());
   system_rhs.collect_sizes();
+  
  
+  deformation.reinit (dof_handler.n_dofs());
+  deformation = 0;
+  //VectorTools::interpolate(MappingQ<2,3>(3), dof_handler, 
+  //                         /*Identity<spacedim>(),*/
+  //                         Initial_map_sphere_to_ellipsoid<spacedim>(a,b,c),
+  //                         deformation);                               
   /*}}}*/
 }
 
 
 template <int spacedim>
-void VectorHelfrichFlow<spacedim>::assemble_system (double zn)
+MappingQEulerian<2,Vector<double>,spacedim> 
+VectorHelfrichFlow<spacedim>::assemble_system (double zn)
 {
   /*{{{*/
   
@@ -370,6 +451,17 @@ void VectorHelfrichFlow<spacedim>::assemble_system (double zn)
    *    rhs has size n_dofs
    *
    */
+  
+  /* build a MappingQEulerian that approximates
+   * grid_transform : sphere --> ellipsoid. This will be updated by the
+   * deformation induced by the velocity field computed at each time step.
+  */
+  
+  /* create an interpolation of the transformation that takes the sphere to the
+   * ellipsoid, this will be updated at each mesh movement */
+  
+  MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, dof_handler, deformation);
+  MappingQ<dim,spacedim> mappingq(2);
   
   system_matrix = 0;
   VH = 0;
@@ -476,11 +568,12 @@ void VectorHelfrichFlow<spacedim>::assemble_system (double zn)
   //system_matrix.block(1,0) = 0;
   
   system_rhs.block(0) = 0;
+  return mapping;
   /*}}}*/
 }
 
 template <int spacedim>
-void VectorHelfrichFlow<spacedim>::output_results (int &step) 
+void VectorHelfrichFlow<spacedim>::output_results (int &step,MappingQEulerian<2,Vector<double>,spacedim> mapping) 
 {
   /*{{{*/
   
@@ -510,10 +603,9 @@ void VectorHelfrichFlow<spacedim>::output_results (int &step)
   //                          "exact_solution",
   //                          DataOut<dim,DoFHandler<dim,spacedim> >::type_dof_data);
   
-  data_out.build_patches (mapping,
-                          mapping.get_degree());
+  data_out.build_patches (mapping, mapping.get_degree());
 
-  std::string filename ("./data/sphere_with_L_test_willmore_flow-" + Utilities::int_to_string(step, 5));
+  std::string filename ("./data/test_willmore_flow-" + Utilities::int_to_string(step, 5));
   filename += ".vtk";
   std::ofstream output (filename.c_str());
   data_out.write_vtk (output);
@@ -521,30 +613,52 @@ void VectorHelfrichFlow<spacedim>::output_results (int &step)
 }
 
 template <int spacedim>
-void VectorHelfrichFlow<spacedim>::move_mesh (double zn, Vector<double> node_velocity) const
+void VectorHelfrichFlow<spacedim>::move_mesh (double zn, Vector<double> node_velocity) 
 {
   /*{{{*/
   std::cout << "    Moving mesh..." <<  std::endl;
-  std::vector<bool> vertex_touched (triangulation.n_vertices(), false);
+  //std::vector<bool> vertex_touched (triangulation.n_vertices(), false);
 
-  for (typename DoFHandler<2,spacedim>::active_cell_iterator
-       cell = dof_handler.begin_active ();
-       cell != dof_handler.end(); ++cell)
-  {
-    for (unsigned int v=0; v<GeometryInfo<2>::vertices_per_cell; ++v)
-      if (vertex_touched[cell->vertex_index(v)] == false)
-      { 
-        vertex_touched[cell->vertex_index(v)] = true;
-        
-        // add displacement to vertex
-        Point<spacedim> vertex_displacement;
-        for (unsigned int d=0; d<spacedim; ++d)
-        {
-          vertex_displacement[d] = zn*node_velocity(cell->vertex_dof_index(v,d));
-          cell->vertex(v) += vertex_displacement;
-        }
-      }  
-  }
+  for (unsigned int i=0;i<node_velocity.size(); ++i)
+    deformation(i) = zn*node_velocity(i);
+
+
+  //// move vertices of mesh using velocity
+  //for (typename DoFHandler<2,spacedim>::active_cell_iterator
+  //     cell = dof_handler.begin_active ();
+  //     cell != dof_handler.end(); ++cell)
+  //{
+    //for (unsigned int v=0; v<GeometryInfo<2>::vertices_per_cell; ++v)
+    //{
+    //  if (vertex_touched[cell->vertex_index(v)] == false)
+    //  { 
+    //    vertex_touched[cell->vertex_index(v)] = true;
+    //    
+    //    // add displacement to vertex
+    //    Point<spacedim> vertex_displacement;
+    //    for (unsigned int d=0; d<spacedim; ++d)
+    //    {
+    //      const unsigned int vec_index = cell->vertex_dof_index(v,d);
+    //      vertex_displacement[d] = zn*node_velocity(vec_index);
+    //      cell->vertex(v) += vertex_displacement;
+
+    //      
+    //    }
+    //    if (vertex_displacement.distance(Point<spacedim>(0,0,0)) > max_disp)
+    //      max_disp = vertex_displacement.distance(Point<spacedim>(0,0,0));
+    //    
+    //  }  
+    //}
+    // update deformation for the mapping 
+
+    //std::vector<types::global_dof_index> dof_indices(27);
+    //cell->get_dof_indices(dof_indices);
+    //for (size_t i = 0; i<dof_indices.size(); ++i) {
+    //  deformation(dof_indices[i]) += zn*node_velocity(dof_indices[i]); 
+    //}
+
+    // deformation(vec_index) += zn*node_velocity(vec_index);
+    //}
   /*}}}*/
 }
 
@@ -684,7 +798,7 @@ double VectorHelfrichFlow<spacedim>::compute_min_mesh_diam ()
 }
 
   template <int spacedim>
-double VectorHelfrichFlow<spacedim>::compute_surface_area ()
+double VectorHelfrichFlow<spacedim>::compute_surface_area (MappingQEulerian<2,Vector<double>,spacedim> mapping)
 {
   /*{{{*/
   double surface_area = GridTools::volume(triangulation,mapping);
@@ -693,7 +807,7 @@ double VectorHelfrichFlow<spacedim>::compute_surface_area ()
 }
 
 template<int spacedim>
-double VectorHelfrichFlow<spacedim>::compute_volume ()
+double VectorHelfrichFlow<spacedim>::compute_volume (MappingQEulerian<2,Vector<double>,spacedim> mapping)
 {
 /*{{{*/
   
@@ -831,7 +945,7 @@ template <int spacedim>
 void VectorHelfrichFlow<spacedim>::run ()
 {
   /*{{{*/
-  double a = 1; double b = 1; double c = 1;
+  double a = 1; double b = 2; double c = 3;
   Point<3> center(0,0,0);
   
   make_grid_and_dofs(a,b,c,center);
@@ -839,11 +953,12 @@ void VectorHelfrichFlow<spacedim>::run ()
             
   double time = 0.0;
   double end_time = 1.0;
-  double time_step = 1e-5;
+  double time_step = 1e-6;
   double max_time_step = 1e-2;
   double min_time_step = 1e-8;
   double max_allowable_displacement = 1e-1;
-  double max_velo  = 0;
+  //double max_velo  = 0;
+  max_disp = 0;
   //double l2_norm_velo  = 0;
   bool write_mats              = false;
   bool compute_mesh_statistics = true;
@@ -856,10 +971,6 @@ void VectorHelfrichFlow<spacedim>::run ()
   
   int step = 0, write_solution_step = 0;
   //output_results(write_solution_step);
-  if (compute_mesh_statistics) {
-    init_surface_area = compute_surface_area();
-    init_volume       = compute_volume();
-  }
   while (time < end_time && time_step >= min_time_step)
   {
     /*{{{*/
@@ -867,7 +978,7 @@ void VectorHelfrichFlow<spacedim>::run ()
     std::cout << "\n===================" << std::endl;
     printf("iteration:         %d\n", step);
     printf("current time:      %0.9f\n", time);
-    printf("time_step:         %0.9f\n", time_step);
+    printf("time_step:         %0.2e\n", time_step);
     if (compute_mesh_statistics) 
     {
       printf("min mesh diam:     %0.9f\n", min_mesh_diam);
@@ -876,7 +987,12 @@ void VectorHelfrichFlow<spacedim>::run ()
     }
     std::cout << "-------------------" << std::endl;
     
-    assemble_system(time_step);
+    MappingQEulerian<2,Vector<double>,spacedim> mapping = assemble_system(time_step);
+  
+    if (compute_mesh_statistics) {
+      init_surface_area = compute_surface_area(mapping);
+      init_volume       = compute_volume(mapping);
+    }
     
     std::cout << "system assembled" << std::endl;
     //std::cout << "max_norm rhs: "   << get_max_norm_wrt_cell(system_rhs.block(1)) << std::endl;
@@ -892,13 +1008,13 @@ void VectorHelfrichFlow<spacedim>::run ()
       //solve_using_schur();
 
       //max_velo = get_max_norm_wrt_cell(VH.block(0));
-      max_velo = VH.block(0).l2_norm();
+      //max_velo = VH.block(0).l2_norm();
       
-      if (time_step*max_velo > max_allowable_displacement)
+      if (time_step*max_disp > max_allowable_displacement)
       {
         std::cout << "........." << std::endl;
         std::cout << "          time step too large" << std::endl;
-        std::cout << "          attempted displacement of: " << time_step*max_velo << std::endl;
+        std::cout << "          attempted displacement of: " << time_step*max_disp << std::endl;
         time_step = std::max(0.9*time_step,min_time_step);
         std::cout << "          reducing time step" << std::endl;
         std::cout << "........." << std::endl;
@@ -912,18 +1028,19 @@ void VectorHelfrichFlow<spacedim>::run ()
         if (step%1==0) // write output
         {
           write_solution_step+=1;
-          output_results(write_solution_step);
+          output_results(write_solution_step,mapping);
         }
-        std::cout << "max displacement: " << time_step*max_velo  << std::endl;
+        
+        move_mesh(time_step,VH.block(0));
+        
+        std::cout << "max displacement: " << time_step*max_disp << std::endl;
         //std::cout << "H:                " << get_max_norm_wrt_cell(VH.block(1)) << std::endl;
         std::cout << "H.l2_norm:        " << VH.block(1).l2_norm() << std::endl;
         
-        move_mesh(time_step,VH.block(0));
-
         if (compute_mesh_statistics) {
           min_mesh_diam      = compute_min_mesh_diam();
-          delta_surface_area = (compute_surface_area() - init_surface_area)/init_surface_area;
-          delta_volume       = (compute_volume() - init_volume)/init_volume;
+          delta_surface_area = (compute_surface_area(mapping) - init_surface_area)/init_surface_area;
+          delta_volume       = (compute_volume(mapping) - init_volume)/init_volume;
         }
         
         step += 1;
