@@ -101,7 +101,7 @@ class VectorHelfrichFlow
     Triangulation<dim,spacedim>   triangulation;
     FESystem<dim,spacedim>        fe; 
     double                        fe_degree;
-    const unsigned int            global_refinements = 3;
+    const unsigned int            global_refinements = 2;
     DoFHandler<dim,spacedim>      dof_handler;
     
     //MappingQ<dim, spacedim>       mapping;
@@ -982,14 +982,14 @@ template <int spacedim>
 void VectorHelfrichFlow<spacedim>::run ()
 {
   /*{{{*/
-  double a = 1; double b = 1.25; double c = 1.5;
+  double a = 1; double b = 1.5; double c = 2;
   Point<3> center(0,0,0);
   
   make_grid_and_dofs(a,b,c,center);
   std::cout << "grid and dofs made " << std::endl;
             
   double time = 0.0;
-  double time_step = 1e-5;
+  double time_step = 1e-2;
   double end_time = 1000*time_step;
   double max_time_step = 1e-2;
   double min_time_step = 1e-8;
