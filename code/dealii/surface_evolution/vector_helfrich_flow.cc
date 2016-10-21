@@ -990,7 +990,7 @@ void VectorHelfrichFlow<spacedim>::run ()
             
   double time = 0.0;
   double time_step = 1e-2;
-  double end_time = 1000*time_step;
+  double end_time = 100*time_step;
   double max_time_step = 1e-2;
   double min_time_step = 1e-8;
   double max_allowable_displacement = 1e-1;
