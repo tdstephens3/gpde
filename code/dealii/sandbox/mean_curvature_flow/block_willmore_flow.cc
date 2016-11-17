@@ -479,7 +479,7 @@ void VectorWillmoreFlow<spacedim>::run ()
   double time = 0.0;
   double end_time = 1;
   int step = 0;
-  double zn = 0.0001;
+  double zn = 0.000001;
   
             
   while (time <= end_time)

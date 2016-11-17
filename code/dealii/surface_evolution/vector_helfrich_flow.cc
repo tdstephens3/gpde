@@ -452,14 +452,8 @@ VectorHelfrichFlow<spacedim>::assemble_system (double zn)
    *
    */
   
-  /* build a MappingQEulerian that approximates
-   * grid_transform : sphere --> ellipsoid. This will be updated by the
-   * deformation induced by the velocity field computed at each time step.
-  */
-  
   /* create an interpolation of the transformation that takes the sphere to the
    * ellipsoid, this will be updated at each mesh movement */
-  
   MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, dof_handler, deformation);
   MappingQ<dim,spacedim> mappingq(2);
   
@@ -970,7 +964,8 @@ void VectorHelfrichFlow<spacedim>::run ()
 
   
   int step = 0, write_solution_step = 0;
-  //output_results(write_solution_step);
+  //MappingQEulerian<2,Vector<double>,spacedim> mapping = assemble_system(0.0);
+  //output_results(write_solution_step,mapping);
   while (time < end_time && time_step >= min_time_step)
   {
     /*{{{*/
