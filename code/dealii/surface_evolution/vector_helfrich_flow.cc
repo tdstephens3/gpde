@@ -21,7 +21,6 @@
  * Authors: Andrea Bonito, Sebastian Pauletti.
  */
 
-
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/function.h>
 #include <deal.II/grid/tria.h>
@@ -102,7 +101,7 @@ class VectorHelfrichFlow
     Triangulation<dim,spacedim>   triangulation;
     FESystem<dim,spacedim>        fe; 
     double                        fe_degree;
-    const unsigned int            global_refinements = 3;
+    const unsigned int            global_refinements = 2;
     DoFHandler<dim,spacedim>      dof_handler;
     
     //MappingQ<dim, spacedim>       mapping;
@@ -121,6 +120,47 @@ class VectorHelfrichFlow
     double max_disp = 0;
     /*}}}*/
 };
+
+template <int spacedim>
+class VectorValuedSolutionNormed: public DataPostprocessorScalar<spacedim>
+{
+/*{{{*/
+public:
+  VectorValuedSolutionNormed(std::string = "dummy");
+  virtual
+  void
+  compute_derived_quantities_vector (const std::vector<Vector<double> >                    &uh,
+                                     const std::vector<std::vector<Tensor<1, spacedim> > > &duh,
+                                     const std::vector<std::vector<Tensor<2, spacedim> > > &dduh,
+                                     const std::vector<Point<spacedim> >                   &normals,
+                                     const std::vector<Point<spacedim> >                   &evaluation_points,
+                                     std::vector<Vector<double> >                          &computed_quantities) const;
+/*}}}*/
+};
+
+template <int spacedim>
+VectorValuedSolutionNormed<spacedim>::VectorValuedSolutionNormed(std::string data_name) : DataPostprocessorScalar<spacedim> (data_name, update_values) {}
+
+template <int spacedim> 
+void VectorValuedSolutionNormed<spacedim>::compute_derived_quantities_vector (const std::vector<Vector<double> >     &uh,
+                                                               const std::vector<std::vector<Tensor<1, spacedim> > >   & /*duh*/,
+                                                               const std::vector<std::vector<Tensor<2, spacedim> > >   & /*dduh*/,
+                                                               const std::vector<Point<spacedim> >                     & /*normals*/,
+                                                               const std::vector<Point<spacedim> >                     & /*evaluation_points*/,
+                                                               std::vector<Vector<double> >                            &computed_quantities) const
+{
+/*{{{*/
+  Assert(computed_quantities.size() == uh.size(),
+         ExcDimensionMismatch (computed_quantities.size(), uh.size()));
+  
+  for (unsigned int i=0; i<computed_quantities.size(); i++)
+    {
+      Assert(computed_quantities[i].size() == 1, ExcDimensionMismatch (computed_quantities[i].size(), 1));
+      Assert(uh[i].size() == 3, ExcDimensionMismatch (uh[i].size(), 3));
+      computed_quantities[i](0) = sqrt(uh[i](0)*uh[i](0) + uh[i](1)*uh[i](1) + uh[i](2)*uh[i](2)) ;
+    }
+/*}}}*/
+}
 
 template <int spacedim>
 class VectorValuedSolutionSquared : public DataPostprocessorScalar<spacedim>
@@ -168,7 +208,7 @@ class Identity : public Function<spacedim>
 {
 /*{{{*/
   public:
-    Identity() : Function<spacedim>() {}
+    Identity() : Function<spacedim>(3) {}
     
     virtual void vector_value_list (const std::vector<Point<spacedim> > &points,
                                             std::vector<Vector<double> >   &value_list) const;
@@ -275,18 +315,10 @@ template<int spacedim>
 double Initial_map_sphere_to_ellipsoid<spacedim>::value(const Point<spacedim> &p, const unsigned int component)  const
 {
   /*{{{*/
-  //double new_point = abc_coeffs[component]*p(component);
+  
+  double norm_p = p.distance(Point<spacedim>(0,0,0));
+  return abc_coeffs[component]*p(component)/norm_p - p(component);   
 
-  //std::cout << "space point: " << p << std::endl;
-  //std::cout << "coeffs: " << abc_coeffs[0] << abc_coeffs[1]<< abc_coeffs[2] << std::endl;
-
-  //std::cout << "new point: (" 
-  //          << abc_coeffs[0]*p(0) <<","
-  //          << abc_coeffs[1]*p(1)<<","
-  //          << abc_coeffs[2]*p(2)<<")"<< std::endl;
-
-  return abc_coeffs[component]*p(component) - p(component);   
-  //return p(component);
   /*}}}*/
 }
 
@@ -368,18 +400,16 @@ template <int spacedim>
 void VectorHelfrichFlow<spacedim>::make_grid_and_dofs (double a, double b, double c, Point<spacedim> center)
 {
   /*{{{*/
-  
-
+  //static Ellipsoid<dim,spacedim> ellipsoid(a,b,c,center);
   //static SphericalManifold<dim,spacedim> sphere;
-  static Ellipsoid<dim,spacedim> ellipsoid(a,b,c,center);
-
-  GridGenerator::hyper_sphere(triangulation);
   
-  GridTools::transform(std_cxx11::bind(&Ellipsoid<dim,spacedim>::grid_transform, &ellipsoid, std_cxx11::_1), 
-                       triangulation);
+  GridGenerator::hyper_sphere(triangulation,center,1.0);
+  
+  //GridTools::transform(std_cxx11::bind(&Ellipsoid<dim,spacedim>::grid_transform, &ellipsoid, std_cxx11::_1), 
+  //                     triangulation);
 
   triangulation.set_all_manifold_ids(0);
-  triangulation.set_manifold (0, ellipsoid);
+  //triangulation.set_manifold (0, sphere);
   
   triangulation.refine_global(global_refinements);
 
@@ -421,14 +451,13 @@ void VectorHelfrichFlow<spacedim>::make_grid_and_dofs (double a, double b, doubl
   system_rhs.block(0).reinit (dof_handler.n_dofs());
   system_rhs.block(1).reinit (dof_handler.n_dofs());
   system_rhs.collect_sizes();
-  
  
   deformation.reinit (dof_handler.n_dofs());
-  deformation = 0;
-  //VectorTools::interpolate(MappingQ<2,3>(3), dof_handler, 
-  //                         /*Identity<spacedim>(),*/
-  //                         Initial_map_sphere_to_ellipsoid<spacedim>(a,b,c),
-  //                         deformation);                               
+  //deformation = 0;
+  VectorTools::interpolate(dof_handler, 
+                           Initial_map_sphere_to_ellipsoid<spacedim>(a,b,c),
+                           deformation);                               
+  
   /*}}}*/
 }
 
@@ -455,7 +484,7 @@ VectorHelfrichFlow<spacedim>::assemble_system (double zn)
   /* create an interpolation of the transformation that takes the sphere to the
    * ellipsoid, this will be updated at each mesh movement */
   MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, dof_handler, deformation);
-  MappingQ<dim,spacedim> mappingq(2);
+  //MappingQ<dim,spacedim> mappingq(2);
   
   system_matrix = 0;
   VH = 0;
@@ -571,33 +600,42 @@ void VectorHelfrichFlow<spacedim>::output_results (int &step,MappingQEulerian<2,
 {
   /*{{{*/
   
-  VectorValuedSolutionSquared<spacedim> computed_velocity_squared("scalar_velocity");
+
+  std::vector<std::string> deformation_names(spacedim, "eulerian_deformation");
+  
+  VectorValuedSolutionNormed<spacedim> computed_velocity_normed("norm_of_velocity");
   VectorValuedSolutionSquared<spacedim> computed_mean_curvature_squared("H2");
   
+  std::vector<DataComponentInterpretation::DataComponentInterpretation>
+  data_component_interpretation(spacedim, DataComponentInterpretation::component_is_part_of_vector);
+
+
   DataOut<dim,DoFHandler<dim,spacedim> > data_out;
   data_out.attach_dof_handler (dof_handler);
+  //
+  //Vector<double> output_vector(2*deformation.size());
+  //for (const unsigned int i=0; i<deformation.size(); ++i)
+  //  output_vector(i) = deformation(i);
+  //for (const unsigned int i=0; i<deformation.size(); ++i)
+  //  output_vector(i+deformation.size()) = VH.block(0)(i);
+  //  
   
-  data_out.add_data_vector (VH.block(0), computed_velocity_squared);
-  data_out.add_data_vector (VH.block(1), computed_mean_curvature_squared);
-
-
-  std::vector<std::string> solution_names (spacedim, "vector_velocity");
-  
-  std::vector<DataComponentInterpretation::DataComponentInterpretation>
-       data_component_interpretation(spacedim,
-                                     DataComponentInterpretation::component_is_part_of_vector);
-
-
-  data_out.add_data_vector (VH.block(0), solution_names,
+  data_out.add_data_vector (deformation, deformation_names,
                             DataOut<dim,DoFHandler<dim,spacedim> >::type_dof_data,
                             data_component_interpretation);
+
+  
+  //data_out.add_data_vector (deformation, computed_deformation);
+  data_out.add_data_vector (VH.block(0), computed_velocity_normed);
+  data_out.add_data_vector (VH.block(1), computed_mean_curvature_squared);
   
   
   //data_out.add_data_vector (exact_solution_values,
   //                          "exact_solution",
   //                          DataOut<dim,DoFHandler<dim,spacedim> >::type_dof_data);
   
-  data_out.build_patches (mapping, mapping.get_degree());
+  //data_out.build_patches (mapping, mapping.get_degree());
+  data_out.build_patches ();
 
   std::string filename ("./data/test_willmore_flow-" + Utilities::int_to_string(step, 5));
   filename += ".vtk";
@@ -614,43 +652,42 @@ void VectorHelfrichFlow<spacedim>::move_mesh (double zn, Vector<double> node_vel
   //std::vector<bool> vertex_touched (triangulation.n_vertices(), false);
 
   for (unsigned int i=0;i<node_velocity.size(); ++i)
-    deformation(i) = zn*node_velocity(i);
-
+    deformation(i) += zn*node_velocity(i);
 
   //// move vertices of mesh using velocity
   //for (typename DoFHandler<2,spacedim>::active_cell_iterator
   //     cell = dof_handler.begin_active ();
   //     cell != dof_handler.end(); ++cell)
   //{
-    //for (unsigned int v=0; v<GeometryInfo<2>::vertices_per_cell; ++v)
-    //{
-    //  if (vertex_touched[cell->vertex_index(v)] == false)
-    //  { 
-    //    vertex_touched[cell->vertex_index(v)] = true;
-    //    
-    //    // add displacement to vertex
-    //    Point<spacedim> vertex_displacement;
-    //    for (unsigned int d=0; d<spacedim; ++d)
-    //    {
-    //      const unsigned int vec_index = cell->vertex_dof_index(v,d);
-    //      vertex_displacement[d] = zn*node_velocity(vec_index);
-    //      cell->vertex(v) += vertex_displacement;
+  //  //for (unsigned int v=0; v<GeometryInfo<2>::vertices_per_cell; ++v)
+  //  //{
+  //  //  if (vertex_touched[cell->vertex_index(v)] == false)
+  //  //  { 
+  //  //    vertex_touched[cell->vertex_index(v)] = true;
+  //  //    
+  //  //    // add displacement to vertex
+  //  //    Point<spacedim> vertex_displacement;
+  //  //    for (unsigned int d=0; d<spacedim; ++d)
+  //  //    {
+  //  //      const unsigned int vec_index = cell->vertex_dof_index(v,d);
+  //  //      vertex_displacement[d] = zn*node_velocity(vec_index);
+  //  //      cell->vertex(v) += vertex_displacement;
 
-    //      
-    //    }
-    //    if (vertex_displacement.distance(Point<spacedim>(0,0,0)) > max_disp)
-    //      max_disp = vertex_displacement.distance(Point<spacedim>(0,0,0));
-    //    
-    //  }  
-    //}
-    // update deformation for the mapping 
+  //  //      
+  //  //    }
+  //  //    if (vertex_displacement.distance(Point<spacedim>(0,0,0)) > max_disp)
+  //  //      max_disp = vertex_displacement.distance(Point<spacedim>(0,0,0));
+  //  //    
+  //  //  }  
+  //  //}
+  //  // update deformation for the mapping 
 
-    //std::vector<types::global_dof_index> dof_indices(27);
-    //cell->get_dof_indices(dof_indices);
-    //for (size_t i = 0; i<dof_indices.size(); ++i) {
-    //  deformation(dof_indices[i]) += zn*node_velocity(dof_indices[i]); 
-    //}
-
+  //  std::vector<types::global_dof_index> dof_indices(fe.dofs_per_cell);
+  //  cell->get_dof_indices(dof_indices);
+  //  for (size_t i = 0; i<dof_indices.size(); ++i) {
+  //    deformation(dof_indices[i]) += zn*node_velocity(dof_indices[i]); 
+  //  }
+  //}
     // deformation(vec_index) += zn*node_velocity(vec_index);
     //}
   /*}}}*/
@@ -939,15 +976,15 @@ template <int spacedim>
 void VectorHelfrichFlow<spacedim>::run ()
 {
   /*{{{*/
-  double a = 1; double b = 2; double c = 3;
+  double a = 1; double b = 1.5; double c = 2;
   Point<3> center(0,0,0);
   
   make_grid_and_dofs(a,b,c,center);
   std::cout << "grid and dofs made " << std::endl;
             
   double time = 0.0;
-  double end_time = 1.0;
-  double time_step = 1e-6;
+  double time_step = 1e-2;
+  double end_time = 100*time_step;
   double max_time_step = 1e-2;
   double min_time_step = 1e-8;
   double max_allowable_displacement = 1e-1;
@@ -983,6 +1020,7 @@ void VectorHelfrichFlow<spacedim>::run ()
     std::cout << "-------------------" << std::endl;
     
     MappingQEulerian<2,Vector<double>,spacedim> mapping = assemble_system(time_step);
+    //output_results(write_solution_step,mapping);
   
     if (compute_mesh_statistics) {
       init_surface_area = compute_surface_area(mapping);
@@ -1000,7 +1038,7 @@ void VectorHelfrichFlow<spacedim>::run ()
     {
       //solve_using_gmres();
       solve_using_umfpack();
-      //solve_using_schur();
+      //solve_using_schur(); // not implemented (Oct 20,2016)
 
       //max_velo = get_max_norm_wrt_cell(VH.block(0));
       //max_velo = VH.block(0).l2_norm();
