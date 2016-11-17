@@ -1,0 +1,1086 @@
+/* ---------------------------------------------------------------------
+ *
+ * vector_mean_curvature_identity.cc      Nov 16, 2016
+ *
+ *  Author: TOM STEPHENS, August 2016
+ *
+ * The deal.II library is free software; you can use it, redistribute
+ * it, and/or modify it under the terms of the GNU Lesser General
+ * Public License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ * The full text of the license can be found in the file LICENSE at
+ * the top level of the deal.II distribution.
+ *
+ * ---------------------------------------------------------------------
+ *
+ */
+
+#include <deal.II/base/quadrature_lib.h>
+#include <deal.II/base/function.h>
+#include <deal.II/grid/tria.h>
+#include <deal.II/grid/tria_iterator.h>
+#include <deal.II/grid/tria_accessor.h>
+#include <deal.II/grid/manifold_lib.h>
+#include <deal.II/grid/grid_tools.h>
+#include <deal.II/grid/grid_refinement.h>
+#include <deal.II/grid/grid_generator.h>
+#include <deal.II/lac/full_matrix.h>
+#include <deal.II/lac/block_vector.h>
+#include <deal.II/lac/vector.h>
+#include <deal.II/lac/solver_control.h>
+#include <deal.II/lac/solver_cg.h>
+#include <deal.II/lac/solver_gmres.h>
+#include <deal.II/lac/sparse_direct.h>
+#include <deal.II/lac/precondition.h>
+#include <deal.II/lac/precondition_block.h>
+#include <deal.II/lac/iterative_inverse.h>
+#include <deal.II/lac/block_sparse_matrix.h>
+#include <deal.II/lac/block_matrix_array.h>
+#include <deal.II/lac/identity_matrix.h>
+#include <deal.II/lac/sparse_matrix.h>
+#include <deal.II/lac/sparse_ilu.h>
+#include <deal.II/lac/dynamic_sparsity_pattern.h>
+#include <deal.II/dofs/dof_handler.h>
+#include <deal.II/dofs/dof_accessor.h>
+#include <deal.II/dofs/dof_tools.h>
+#include <deal.II/dofs/dof_renumbering.h>
+#include <deal.II/fe/fe_system.h>
+#include <deal.II/fe/fe_values.h>
+#include <deal.II/fe/fe_nothing.h>
+#include <deal.II/fe/mapping_q_eulerian.h>
+#include <deal.II/numerics/data_out.h>
+#include <deal.II/numerics/vector_tools.h>
+#include <deal.II/numerics/matrix_tools.h>
+#include <deal.II/numerics/error_estimator.h>
+#include <deal.II/numerics/solution_transfer.h>
+
+#include <stdio.h>
+#include <fstream>
+#include <iostream>
+
+namespace VectorMeanCurvature
+{
+  using namespace dealii;
+
+
+/* ********************************** 
+ *
+ * MeanCurvatureFromPosition<spacedim> class definition
+ *
+ * */
+template <int spacedim>
+class MeanCurvatureFromPosition
+{
+  /*{{{*/
+  public:
+    MeanCurvatureFromPosition () ;
+    void run ();
+
+    
+  
+  private:
+    static const unsigned int dim = spacedim-1;
+  
+    void make_grid_and_global_refine (const unsigned int global_refinements);
+    void setup_dofs ();
+    void initialize_geometry (const double &a,const double &b,const double &c);
+    
+    double compute_surface_area();
+    double compute_volume();
+    
+    void assemble_system ();
+    void solve_using_umfpack(); 
+    void compute_vector_H ();
+    void compute_exact_vector_H ();
+    void compute_scalar_H (); 
+    void compute_exact_scalar_H (); 
+    
+    
+    void output_results ();
+    //void compute_error (double, double, double, Point<3>) const;
+
+    Triangulation<dim,spacedim>     triangulation;
+    
+    /* - data structures for vector mean curvature - */
+    const unsigned int          vector_fe_degree = 2;
+    FESystem<dim,spacedim>      vector_fe; 
+    DoFHandler<dim,spacedim>    vector_dof_handler;
+    
+    SparsityPattern             vector_system_sparsity_pattern;
+    SparseMatrix<double>        vector_system_matrix;
+    
+    Vector<double>              vector_system_rhs;  
+    Vector<double>              vector_H;              // vector mean curvature
+    Vector<double>              exact_vector_H;        // exact solution for vector mean curvature
+    
+    /* - data structures for scalar parameters - */
+    const unsigned int          scalar_fe_degree = 2;
+    FE_Q<dim,spacedim>          scalar_fe; 
+    DoFHandler<dim,spacedim>    scalar_dof_handler;
+    
+    SparsityPattern             scalar_system_sparsity_pattern;
+    SparseMatrix<double>        scalar_system_matrix;
+    
+    Vector<double>             scalar_system_rhs;       
+    Vector<double>             scalar_H;               // scalar mean curvature
+    Vector<double>             exact_scalar_H;         // exact solution for scalar mean curvature
+    /*}}}*/
+};
+
+
+/* ********************************** 
+ *
+ * Function<spacedim> classes 
+ *
+ * */
+/*{{{*/
+template <int spacedim>
+class Identity : public Function<spacedim>
+{
+/*{{{*/
+  public:
+    Identity() : Function<spacedim>(3) {}
+    
+    virtual void vector_value_list (const std::vector<Point<spacedim> > &points,
+                                    std::vector<Vector<double> >   &value_list) const;
+    virtual void vector_value (const Point<spacedim> &p, Vector<double> &value) const;
+    virtual double value (const Point<spacedim> &p, const unsigned int component) const;
+    
+    virtual Tensor<2,spacedim> symmetric_grad(const Tensor<1,spacedim> &unit_normal) const;
+    virtual Tensor<2,spacedim> shape_grad(const Tensor<1,spacedim> &unit_normal) const;
+    virtual Tensor<1,spacedim> shape_grad_component(const Tensor<1,spacedim> &unit_normal, const unsigned int component) const;
+/*}}}*/
+};
+
+template<int spacedim>
+double Identity<spacedim>::value(const Point<spacedim> &p, const unsigned int component)  const
+{
+  /*{{{*/
+  return p(component);
+  /*}}}*/
+}
+
+template<int spacedim>
+void Identity<spacedim>::vector_value(const Point<spacedim> &p, Vector<double> &value) const
+{
+  /*{{{*/
+  for (unsigned int c=0; c<this->n_components; ++c) 
+  {
+    value(c) = Identity<spacedim>::value(p,c);
+  }
+  /*}}}*/
+}
+
+template <int spacedim>
+void Identity<spacedim>::vector_value_list (const std::vector<Point<spacedim> > &points,
+                                            std::vector<Vector<double> >   &value_list) const
+{
+  /*{{{*/
+  Assert (value_list.size() == points.size(),
+          ExcDimensionMismatch (value_list.size(), points.size()));
+  const unsigned int n_points = points.size();
+  for (unsigned int p=0; p<n_points; ++p)
+    vector_value (points[p], value_list[p]);
+  /*}}}*/
+}
+
+template <int spacedim>
+Tensor<2,spacedim> Identity<spacedim>::symmetric_grad(const Tensor<1,spacedim> &unit_normal) const
+{
+  /*{{{*/
+  Tensor<2,spacedim> eye, shape_grad, shape_grad_T;
+  eye = 0; eye[0][0] = 1; eye[1][1] = 1; eye[2][2] = 1;
+  Tensor<2,spacedim> nnT;
+  nnT = outer_product(unit_normal,unit_normal);
+  shape_grad = eye - nnT;
+  shape_grad_T = transpose(shape_grad);
+  return shape_grad + shape_grad_T;
+  /*}}}*/
+}
+
+template <int spacedim>
+Tensor<2,spacedim> Identity<spacedim>::shape_grad(const Tensor<1,spacedim> &unit_normal) const
+{
+  /*{{{*/
+  Tensor<2,spacedim> eye;
+  eye = 0; eye[0][0] = 1; eye[1][1] = 1; eye[2][2] = 1;
+  Tensor<2,spacedim> nnT;
+  nnT = outer_product(unit_normal,unit_normal);
+  return eye - nnT;
+  /*}}}*/
+}
+
+template <int spacedim>
+Tensor<1,spacedim> Identity<spacedim>::shape_grad_component(const Tensor<1,spacedim> &unit_normal, const unsigned int component) const
+{
+  /*{{{*/
+  Tensor<2,spacedim> full_shape_grad = shape_grad(unit_normal);
+  Tensor<1,spacedim> grad_component;
+
+  grad_component[0] = full_shape_grad[component][0];
+  grad_component[1] = full_shape_grad[component][1];
+  grad_component[2] = full_shape_grad[component][2];
+
+  return grad_component;
+  /*}}}*/
+}
+
+template <int spacedim>
+class MapToEllipsoid: public Function<spacedim>
+{
+/*{{{*/
+  public:
+    MapToEllipsoid(double a, double b, double c) : Function<spacedim>(3), abc_coeffs{a,b,c}  {}
+    
+    virtual void vector_value_list (const std::vector<Point<spacedim> > &points,
+                                    std::vector<Vector<double> >   &value_list) const;
+    virtual void vector_value (const Point<spacedim> &p, Vector<double> &value) const;
+    virtual double value (const Point<spacedim> &p, const unsigned int component = 0) const;
+  private:
+    double abc_coeffs[3];
+/*}}}*/
+};
+
+template<int spacedim>
+double MapToEllipsoid<spacedim>::value(const Point<spacedim> &p, const unsigned int component)  const
+{
+  /*{{{*/
+  
+  double norm_p = p.distance(Point<spacedim>(0,0,0));
+  return abc_coeffs[component]*p(component)/norm_p - p(component);   
+
+  /*}}}*/
+}
+
+template<int spacedim>
+void MapToEllipsoid<spacedim>::vector_value(const Point<spacedim> &p, Vector<double> &value) const
+{
+  /*{{{*/
+  for (unsigned int c=0; c<this->n_components; ++c) 
+  {
+    value(c) = Initial_map_sphere_to_ellipsoid<spacedim>::value(p,c);
+  }
+  /*}}}*/
+}
+
+template <int spacedim>
+void MapToEllipsoid<spacedim>::vector_value_list (const std::vector<Point<spacedim> > &points,
+                                            std::vector<Vector<double> >   &value_list) const
+{
+  /*{{{*/
+  Assert (value_list.size() == points.size(),
+          ExcDimensionMismatch (value_list.size(), points.size()));
+  const unsigned int n_points = points.size();
+  for (unsigned int p=0; p<n_points; ++p)
+    Initial_map_sphere_to_ellipsoid<spacedim>::vector_value (points[p], value_list[p]);
+  /*}}}*/
+}
+/*}}}*/
+
+/* ********************************** 
+ *
+ * DataPostProcessor<spacedim> classes and functions
+ *
+ * */
+/*{{{*/
+template <int spacedim>
+class VectorValuedSolutionSquared : public DataPostprocessorScalar<spacedim>
+{
+/*{{{*/
+public:
+  VectorValuedSolutionSquared (std::string = "dummy");
+  virtual
+  void
+  compute_derived_quantities_vector (const std::vector<Vector<double> >                    &uh,
+                                     const std::vector<std::vector<Tensor<1, spacedim> > > &duh,
+                                     const std::vector<std::vector<Tensor<2, spacedim> > > &dduh,
+                                     const std::vector<Point<spacedim> >                   &normals,
+                                     const std::vector<Point<spacedim> >                   &evaluation_points,
+                                     std::vector<Vector<double> >                          &computed_quantities) const;
+/*}}}*/
+};
+
+template <int spacedim>
+VectorValuedSolutionSquared<spacedim>::VectorValuedSolutionSquared (std::string data_name) : DataPostprocessorScalar<spacedim> (data_name, update_values) {}
+
+template <int spacedim> 
+void VectorValuedSolutionSquared<spacedim>::compute_derived_quantities_vector (const std::vector<Vector<double> >     &uh,
+                                                               const std::vector<std::vector<Tensor<1, spacedim> > >   & /*duh*/,
+                                                               const std::vector<std::vector<Tensor<2, spacedim> > >   & /*dduh*/,
+                                                               const std::vector<Point<spacedim> >                     & /*normals*/,
+                                                               const std::vector<Point<spacedim> >                     & /*evaluation_points*/,
+                                                               std::vector<Vector<double> >                            &computed_quantities) const
+{
+/*{{{*/
+  Assert(computed_quantities.size() == uh.size(),
+         ExcDimensionMismatch (computed_quantities.size(), uh.size()));
+  
+  for (unsigned int i=0; i<computed_quantities.size(); i++)
+    {
+      Assert(computed_quantities[i].size() == 1, ExcDimensionMismatch (computed_quantities[i].size(), 1));
+      Assert(uh[i].size() == 3, ExcDimensionMismatch (uh[i].size(), 3));
+      computed_quantities[i](0) = uh[i](0)*uh[i](0) + uh[i](1)*uh[i](1) + uh[i](2)*uh[i](2) ;
+    }
+/*}}}*/
+}
+
+template <int spacedim>
+class VectorValuedSolutionNormed : public DataPostprocessorScalar<spacedim>
+{
+/*{{{*/
+public:
+  VectorValuedSolutionNormed (std::string = "dummy");
+  virtual
+  void
+  compute_derived_quantities_vector (const std::vector<Vector<double> >                    &uh,
+                                     const std::vector<std::vector<Tensor<1, spacedim> > > &duh,
+                                     const std::vector<std::vector<Tensor<2, spacedim> > > &dduh,
+                                     const std::vector<Point<spacedim> >                   &normals,
+                                     const std::vector<Point<spacedim> >                   &evaluation_points,
+                                     std::vector<Vector<double> >                          &computed_quantities) const;
+/*}}}*/
+};
+
+template <int spacedim>
+VectorValuedSolutionNormed<spacedim>::VectorValuedSolutionNormed (std::string data_name) : DataPostprocessorScalar<spacedim> (data_name, update_values) {}
+
+template <int spacedim> 
+void VectorValuedSolutionNormed<spacedim>::compute_derived_quantities_vector (const std::vector<Vector<double> >     &uh,
+                                                               const std::vector<std::vector<Tensor<1, spacedim> > >   & /*duh*/,
+                                                               const std::vector<std::vector<Tensor<2, spacedim> > >   & /*dduh*/,
+                                                               const std::vector<Point<spacedim> >                     & /*normals*/,
+                                                               const std::vector<Point<spacedim> >                     & /*evaluation_points*/,
+                                                               std::vector<Vector<double> >                            &computed_quantities) const
+{
+/*{{{*/
+  Assert(computed_quantities.size() == uh.size(),
+         ExcDimensionMismatch (computed_quantities.size(), uh.size()));
+  
+  for (unsigned int i=0; i<computed_quantities.size(); i++)
+    {
+      Assert(computed_quantities[i].size() == 1, ExcDimensionMismatch (computed_quantities[i].size(), 1));
+      Assert(uh[i].size() == 3, ExcDimensionMismatch (uh[i].size(), 3));
+      computed_quantities[i](0) = sqrt(uh[i](0)*uh[i](0) + uh[i](1)*uh[i](1) + uh[i](2)*uh[i](2)) ;
+    }
+/*}}}*/
+}
+
+
+
+/*}}}*/
+
+
+/* ********************************** 
+ *
+ * MeanCurvatureFromPosition<spacedim> functions
+ *
+ * */
+/*{{{*/
+
+template <int spacedim>
+MeanCurvatureFromPosition<spacedim>::MeanCurvatureFromPosition ()
+  :
+  vector_fe(FE_Q<dim,spacedim>(vector_fe_degree),spacedim),
+  vector_dof_handler(triangulation),
+  scalar_fe(scalar_fe_degree),
+  scalar_dof_handler(triangulation)
+  {}
+
+
+template <int spacedim>
+double MeanCurvatureFromPosition<spacedim>::compute_surface_area ()
+{
+  /*{{{*/
+  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, vector_dof_handler, euler_vector);
+  
+  const QGauss<dim> quadrature_formula (2*vector_fe.degree);
+  FEValues<dim,spacedim> fe_values (mapping, vector_fe, quadrature_formula,
+                                    update_values              |
+                                    update_normal_vectors      |
+                                    update_gradients           |
+                                    update_quadrature_points   |
+                                    update_JxW_values);
+
+  const unsigned int  n_q_points    = quadrature_formula.size();
+
+  double surface_area = 0;
+  for (typename DoFHandler<dim,spacedim>::active_cell_iterator
+       cell = vector_dof_handler.begin_active(),
+       endc = vector_dof_handler.end();
+       cell!=endc; ++cell)
+  { 
+    fe_values.reinit (cell);
+    
+    for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+      surface_area += fe_values.JxW(q_point);
+  }
+  return surface_area;
+  /*}}}*/
+}
+
+template<int spacedim>
+double MeanCurvatureFromPosition<spacedim>::compute_volume ()
+{
+  /*{{{*/
+  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, vector_dof_handler, euler_vector);
+  
+  const QGauss<dim> quadrature_formula (2*vector_fe.degree);
+  FEValues<dim,spacedim> fe_values (mapping, vector_fe, quadrature_formula,
+                                    update_values              |
+                                    update_normal_vectors      |
+                                    update_gradients           |
+                                    update_quadrature_points   |
+                                    update_JxW_values);
+
+  const unsigned int  n_q_points    = quadrature_formula.size();
+
+  double volume = 0;
+  for (typename DoFHandler<dim,spacedim>::active_cell_iterator
+       cell = vector_dof_handler.begin_active(),
+       endc = vector_dof_handler.end();
+       cell!=endc; ++cell)
+  { 
+    fe_values.reinit (cell);
+    
+    for (unsigned int q_point=0; q_point<n_q_points; ++q_point) /* -= to account for direction of normal vector */
+      volume -= fe_values.quadrature_point(q_point)*fe_values.normal_vector(q_point)*fe_values.JxW(q_point);
+  }
+  return (1.0/3.0)*volume;  
+  /*}}}*/
+}
+
+template <int spacedim>
+void MeanCurvatureFromPosition<spacedim>::make_grid_and_global_refine (const unsigned int initial_global_refinement)
+{
+  /*{{{*/
+  /*  --- build geometry --- */
+  GridGenerator::hyper_sphere(triangulation,Point<spacedim>(0,0,0),1.0);
+
+  triangulation.set_all_manifold_ids(0);
+  
+  triangulation.refine_global(initial_global_refinement);
+  /*}}}*/
+}
+
+template <int spacedim>
+void MeanCurvatureFromPosition<spacedim>::setup_dofs ()
+{
+  /*{{{*/                     
+  
+  vector_dof_handler.distribute_dofs (vector_fe);
+  scalar_dof_handler.distribute_dofs (scalar_fe);
+  
+  /*---- build system block matrix for vector equations ------*/
+  const unsigned int vector_dofs = vector_dof_handler.n_dofs();
+  DynamicSparsityPattern vector_dsp ();
+  vector_block_dsp.block(0,0).reinit (vector_dofs,vector_dofs);
+  vector_block_dsp.block(0,1).reinit (vector_dofs,vector_dofs);
+  vector_block_dsp.block(1,0).reinit (vector_dofs,vector_dofs);
+  vector_block_dsp.block(1,1).reinit (vector_dofs,vector_dofs);
+  vector_block_dsp.collect_sizes();
+  
+  DoFTools::make_sparsity_pattern (vector_dof_handler, 
+                                   vector_block_dsp.block(0,0),
+                                   vector_constraints,false); 
+  DoFTools::make_sparsity_pattern (vector_dof_handler, 
+                                   vector_block_dsp.block(0,1),
+                                   vector_constraints,false); 
+  DoFTools::make_sparsity_pattern (vector_dof_handler, 
+                                   vector_block_dsp.block(1,0),
+                                   vector_constraints,false); 
+  DoFTools::make_sparsity_pattern (vector_dof_handler, 
+                                   vector_block_dsp.block(1,1),
+                                   vector_constraints,false); 
+  
+  //vector_block_sparsity_pattern.reinit(2,2);
+  vector_block_sparsity_pattern.copy_from (vector_block_dsp);
+ 
+  /*---- build system matrix for gcmm ------*/
+  gc_matrix.clear();
+  DynamicSparsityPattern gc_dsp(vector_dofs, vector_dofs);
+  DoFTools::make_sparsity_pattern(vector_dof_handler, gc_dsp, vector_constraints, false);
+  gc_sparsity_pattern.copy_from(gc_dsp);
+  gc_matrix.reinit(gc_sparsity_pattern);
+  gc_rhs.reinit(vector_dofs);
+  
+
+  /*---- build block system matrix for scalar equations ------*/
+  scalar_block_matrix.clear();
+  BlockDynamicSparsityPattern scalar_block_dsp (2,2);
+  const unsigned int scalar_dofs = scalar_dof_handler.n_dofs();
+  scalar_block_dsp.block(0,0).reinit (scalar_dofs,scalar_dofs);
+  scalar_block_dsp.block(0,1).reinit (scalar_dofs,scalar_dofs);
+  scalar_block_dsp.block(1,0).reinit (scalar_dofs,scalar_dofs);
+  scalar_block_dsp.block(1,1).reinit (scalar_dofs,scalar_dofs);
+  scalar_block_dsp.collect_sizes();
+  
+  DoFTools::make_sparsity_pattern (scalar_dof_handler, 
+                                   scalar_block_dsp.block(0,0),
+                                   scalar_constraints,false); 
+  DoFTools::make_sparsity_pattern (scalar_dof_handler, 
+                                   scalar_block_dsp.block(0,1),
+                                   scalar_constraints,false); 
+  DoFTools::make_sparsity_pattern (scalar_dof_handler, 
+                                   scalar_block_dsp.block(1,0),
+                                   scalar_constraints,false); 
+  DoFTools::make_sparsity_pattern (scalar_dof_handler, 
+                                   scalar_block_dsp.block(1,1),
+                                   scalar_constraints,false); 
+  
+  
+  //scalar_block_sparsity_pattern.reinit(2,2);
+  scalar_block_sparsity_pattern.copy_from (scalar_block_dsp);
+  /*-------------------------*/
+
+  /*---- build NON-BLOCK system matrix for scalar equations ------*/
+  scalar_matrix.clear();
+  DynamicSparsityPattern scalar_dsp(scalar_dofs);
+  DoFTools::make_sparsity_pattern(scalar_dof_handler,scalar_dsp, scalar_constraints,false);
+  scalar_sparsity_pattern.copy_from(scalar_dsp);
+  
+  vector_matrix.reinit(vector_block_sparsity_pattern);
+  vector_rhs.reinit (2);
+  vector_rhs.block(0).reinit (vector_dofs);
+  vector_rhs.block(1).reinit (vector_dofs);
+  vector_rhs.collect_sizes();
+  
+  scalar_block_matrix.reinit (scalar_block_sparsity_pattern);
+  scalar_block_rhs.reinit(2);
+  scalar_block_rhs.block(0).reinit(scalar_dofs);
+  scalar_block_rhs.block(1).reinit(scalar_dofs);
+  scalar_block_rhs.collect_sizes();
+  
+  scalar_matrix.reinit(scalar_sparsity_pattern);
+  scalar_rhs.reinit(scalar_dofs);
+ 
+  
+
+  euler_vector.reinit   (vector_dofs);
+  vector_H.reinit       (vector_dofs);
+  exact_vector_H.reinit (vector_dofs);
+  scalar_H.reinit       (scalar_dofs);
+  exact_scalar_H.reinit (scalar_dofs);
+  /*----------------------------------*/
+  
+  std::cout << "in setup_dofs(), Total number of degrees of freedom: "
+            << vector_dofs + scalar_dofs
+            << "\n( = dofs for vector equation vector elements + dofs for dynamic parameters scalar elements )"
+            << "\n( = " << vector_dofs << " + " << scalar_dofs <<" )"
+            << std::endl;
+  /*}}}*/
+}
+
+  
+template <int spacedim>
+void MeanCurvatureFromPosition<spacedim>::initialize_geometry (const double &a, 
+                                                               const double &b, 
+                                                               const double &c)
+{
+/*{{{*/
+/* interpolate the map from triangulation to desired geometry for the first time */
+  VectorTools::interpolate(vector_dof_handler, 
+                           MapToEllipsoid<spacedim>(a,b,c),
+                           euler_vector);
+/*}}}*/
+}
+
+template <int spacedim>
+void MeanCurvatureFromPosition<spacedim>::assemble_system ()
+{
+/*{{{*/
+  
+  /*
+   *
+   *    Spontaneous curvature model, see Eqn 5.14 in Dogan Nochetto ESIAM 2012 paper
+   *
+   *
+   *    [   M      L - hL + 0.5*d - c0_div - c0_grad ][ V_n+1 ]   [  rhs_c0_L - rhs_c0_hL - 1.5*rhs_c0_div - rhs_c0_grad ]
+   *    |                                            ||       | = |                                                      |
+   *    [ -time_step*L                     M         ][ H_n+1 ]   [                      rhs_H                           ]
+   *
+   *    vector_matrix*Vb_H = vector_rhs
+   *    
+   *    M*Vs = a_rhs
+   *    M*Vv = v_rhs
+   *    
+   *    system_matrix has size 2*n_dofs x 2*n_dofs, 
+   *    each block has size n_dofs x n_dofs, and
+   *    each of the rhs_X vectors have size n_dofs
+   *
+   *    also build the n_dofs x n_dofs matrix W_nu which holds the shape
+   *    derivative of the volume, so  delta V(Gamma;W), see Discrete Helfrich
+   *    Model I in GPDE Workshop Notes 
+   */
+  
+  /* build a MappingQEulerian that initially approximates
+   * sphere --> ellipsoid. This will be updated by the
+   * global_euler_vector induced by the velocity field computed at each time step, see
+   * update_mapping() 
+   */                               
+
+  const MappingQEulerian<dim,Vector<double>,spacedim> mapping (2, vector_dof_handler, global_euler_vector);
+   
+  vector_matrix   = 0;
+  vector_rhs      = 0;
+  
+  if (!initial_assembly)
+  {
+    surface_area_rhs = 0;
+    volume_rhs       = 0;
+  }
+
+  const QGauss<dim> quadrature_formula (2*vector_fe.degree);
+  FEValues<dim,spacedim> vector_fe_values (mapping, vector_fe, quadrature_formula,
+                                            update_quadrature_points |
+                                            update_values            |
+                                            update_normal_vectors    |
+                                            update_gradients         |
+                                            update_JxW_values);
+  
+  FEValues<dim,spacedim> scalar_fe_values (mapping, scalar_fe, quadrature_formula,
+                                                       update_quadrature_points |
+                                                       update_values            | 
+                                                       update_gradients         |
+                                                       update_JxW_values);
+
+  const unsigned int  vector_dofs_per_cell = vector_fe.dofs_per_cell;
+  const unsigned int  n_q_points = quadrature_formula.size();
+
+  double local_M       = 0; //    (vector_dofs_per_cell, vector_dofs_per_cell);
+  double local_L       = 0; //    (vector_dofs_per_cell, vector_dofs_per_cell);
+  double local_hL      = 0; //    (vector_dofs_per_cell, vector_dofs_per_cell);
+  double local_d       = 0; //    (vector_dofs_per_cell, vector_dofs_per_cell);
+  double local_c0_div  = 0; //    (vector_dofs_per_cell, vector_dofs_per_cell);
+  double local_c0_grad = 0; //    (vector_dofs_per_cell, vector_dofs_per_cell);
+ 
+  FullMatrix<double>  local_matrix_block_00 (vector_dofs_per_cell, vector_dofs_per_cell);
+  FullMatrix<double>  local_matrix_block_01 (vector_dofs_per_cell, vector_dofs_per_cell);
+  FullMatrix<double>  local_matrix_block_10 (vector_dofs_per_cell, vector_dofs_per_cell);
+  FullMatrix<double>  local_matrix_block_11 (vector_dofs_per_cell, vector_dofs_per_cell);
+  
+  double local_rhs_c0_L    = 0; //(vector_dofs_per_cell);
+  double local_rhs_c0_hL   = 0; //(vector_dofs_per_cell);
+  double local_rhs_c0_div  = 0; //(vector_dofs_per_cell);
+  double local_rhs_c0_grad = 0; //(vector_dofs_per_cell);
+  double local_rhs_H       = 0; //(vector_dofs_per_cell);
+  
+  Vector<double>      local_rhs_block_0 (vector_dofs_per_cell);
+  Vector<double>      local_rhs_block_1 (vector_dofs_per_cell);
+  
+  Vector<double>      local_s_rhs       (vector_dofs_per_cell);
+  Vector<double>      local_v_rhs       (vector_dofs_per_cell);
+
+  Tensor<2,spacedim> temp_rank2_tensor;
+  Point<spacedim> space_point;
+  
+  Identity<spacedim> identity_on_manifold;
+  
+  const FEValuesExtractors::Vector W (0);
+  std::vector<types::global_dof_index> local_dof_indices (vector_dofs_per_cell);
+ 
+  std::vector<Tensor<1,spacedim> > local_Hn_values(n_q_points, Tensor<1,spacedim>());
+  
+  std::vector<double> local_bend_mod_values(n_q_points, 0);
+  std::vector<Tensor<1,spacedim> > local_bend_mod_gradients(n_q_points,Tensor<1,spacedim>());
+  
+  std::vector<double> local_spont_curv_values(n_q_points, 0);
+  std::vector<Tensor<1,spacedim> > local_spont_curv_gradients(n_q_points,Tensor<1,spacedim>());
+  
+  typename DoFHandler<dim,spacedim>::active_cell_iterator 
+    scalar_cell = scalar_dof_handler.begin_active();
+  typename DoFHandler<dim,spacedim>::active_cell_iterator
+    cell = vector_dof_handler.begin_active(),
+    endc = vector_dof_handler.end();
+  
+  for ( ; cell!=endc; ++cell, ++scalar_cell)
+  { 
+
+    local_matrix_block_00 = 0; 
+    local_matrix_block_01 = 0;
+    local_matrix_block_10 = 0;
+    local_matrix_block_11 = 0;
+
+    local_rhs_block_0 = 0;
+    local_rhs_block_1 = 0;  
+    
+    local_s_rhs       = 0;
+    local_v_rhs       = 0;
+
+    vector_fe_values.reinit (cell);
+    scalar_fe_values.reinit (scalar_cell);
+    
+    if (!initial_assembly)
+      vector_fe_values[W].get_function_values(Hn,local_Hn_values);
+
+    scalar_fe_values.get_function_values(vector_modulus,local_bend_mod_values);
+    scalar_fe_values.get_function_gradients(vector_modulus,
+                                                        local_bend_mod_gradients);
+    
+    scalar_fe_values.get_function_values(spontaneous_curvature,
+                                                     local_spont_curv_values);
+    scalar_fe_values.get_function_gradients(spontaneous_curvature,
+                                                        local_spont_curv_gradients);
+
+    for (unsigned int i=0; i<vector_dofs_per_cell; ++i)
+      for (unsigned int j=0; j<vector_dofs_per_cell; ++j)
+        for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+        {
+          space_point = vector_fe_values.quadrature_point(q_point);
+
+          local_M       =  vector_fe_values[W].value(i,q_point)*
+                           vector_fe_values[W].value(j,q_point)*
+                           vector_fe_values.JxW(q_point);
+
+          local_L       =  scalar_product(vector_fe_values[W].gradient(i,q_point),
+                                          vector_fe_values[W].gradient(j,q_point)
+                                         )* vector_fe_values.JxW(q_point);
+          
+          local_hL      =  scalar_product(identity_on_manifold.symmetric_grad(vector_fe_values.normal_vector(q_point))*
+                                               vector_fe_values[W].gradient(i,q_point),
+                                               vector_fe_values[W].gradient(j,q_point)
+                                              )* vector_fe_values.JxW(q_point);
+          
+          local_d       =  vector_fe_values[W].divergence(i,q_point)*
+                           vector_fe_values[W].divergence(j,q_point)*
+                           vector_fe_values.JxW(q_point);
+          
+          local_c0_div  =  vector_fe_values[W].divergence(i,q_point)*
+                           local_spont_curv_values[q_point]*
+                           vector_fe_values.normal_vector(q_point)*
+                           vector_fe_values[W].value(j,q_point)*
+                           vector_fe_values.JxW(q_point); 
+          
+          local_c0_grad = (local_spont_curv_gradients[q_point]*
+                            vector_fe_values[W].value(i,q_point))*
+                            vector_fe_values.normal_vector(q_point)*
+                            vector_fe_values[W].value(j,q_point)*
+                            vector_fe_values.JxW(q_point); 
+
+          local_matrix_block_00(i,j) += local_M;
+          
+          local_matrix_block_01(i,j) += local_L
+                                      - local_hL
+                                      + 0.5*local_d
+                                      - local_c0_div
+                                      - local_c0_grad;
+         
+          local_matrix_block_10(i,j) -= time_step*local_L;
+        
+          local_matrix_block_11(i,j) += local_M;
+        }
+
+    
+    for (unsigned int i=0; i<vector_dofs_per_cell; ++i)
+      for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+      {                                                          
+        space_point = vector_fe_values.quadrature_point(q_point);
+
+        Tensor<1,spacedim> local_spont_curv_grad = local_spont_curv_gradients[q_point];
+        Tensor<1,spacedim> spont_curv_shape_grad = 
+          local_spont_curv_grad - (local_spont_curv_grad*vector_fe_values.normal_vector(q_point))*
+                            vector_fe_values.normal_vector(q_point);
+
+        temp_rank2_tensor = outer_product(vector_fe_values.normal_vector(q_point), 
+                                          spont_curv_shape_grad);
+        
+
+        local_rhs_c0_L    = scalar_product(vector_fe_values[W].gradient(i,q_point), temp_rank2_tensor)*
+                            vector_fe_values.JxW(q_point);          
+        
+        local_rhs_c0_hL   = scalar_product(identity_on_manifold.symmetric_grad(vector_fe_values.normal_vector(q_point))*
+                                              vector_fe_values[W].gradient(i,q_point), temp_rank2_tensor)*
+                               vector_fe_values.JxW(q_point);
+        
+        local_rhs_c0_div  = local_spont_curv_values[q_point]*
+                            local_spont_curv_values[q_point]*
+                            vector_fe_values[W].divergence(i,q_point)*
+                            vector_fe_values.JxW(q_point);
+
+        local_rhs_c0_grad = local_spont_curv_values[q_point]*
+                            (local_spont_curv_grad*
+                             vector_fe_values[W].value(i,q_point))*
+                            vector_fe_values.JxW(q_point);
+
+        local_rhs_H       = scalar_product(vector_fe_values[W].gradient(i,q_point),
+                                           0.5*identity_on_manifold.symmetric_grad(vector_fe_values.normal_vector(q_point)))*
+                            vector_fe_values.JxW(q_point);
+          
+        if (!initial_assembly)
+        {
+          local_s_rhs(i) += vector_fe_values[W].value(i,q_point)*
+                            local_Hn_values[q_point]* 
+                            vector_fe_values.JxW(q_point); 
+
+          local_v_rhs(i) += vector_fe_values[W].value(i,q_point)*
+                            vector_fe_values.normal_vector(q_point)*
+                            vector_fe_values.JxW(q_point); 
+        }
+
+        local_rhs_block_0 (i) += local_rhs_c0_L          
+                               - local_rhs_c0_hL   
+                           - 1.5*local_rhs_c0_div 
+                               - local_rhs_c0_grad;
+        local_rhs_block_1 (i) += local_rhs_H;
+      }
+
+    cell->get_dof_indices (local_dof_indices);
+    
+    vector_constraints.distribute_local_to_global (local_matrix_block_00,
+                                                    local_dof_indices,
+                                                    vector_matrix.block(0,0));
+    vector_constraints.distribute_local_to_global (local_matrix_block_01,
+                                                    local_dof_indices,
+                                                    vector_matrix.block(0,1));
+    vector_constraints.distribute_local_to_global (local_matrix_block_10,
+                                                    local_dof_indices,
+                                                    vector_matrix.block(1,0));
+    vector_constraints.distribute_local_to_global (local_matrix_block_11,
+                                                    local_dof_indices,
+                                                    vector_matrix.block(1,1));
+    
+    vector_constraints.distribute_local_to_global (local_rhs_block_0,
+                                                    local_dof_indices,
+                                                    vector_rhs.block(0));
+    vector_constraints.distribute_local_to_global (local_rhs_block_1,
+                                                    local_dof_indices,
+                                                    vector_rhs.block(1));
+
+    if (!initial_assembly)
+    {
+      vector_constraints.distribute_local_to_global (local_s_rhs,
+                                                      local_dof_indices,
+                                                      surface_area_rhs);
+      vector_constraints.distribute_local_to_global (local_v_rhs,
+                                                      local_dof_indices,
+                                                      volume_rhs);
+    }
+  }
+  /*}}}*/
+}
+
+
+template <int spacedim>
+void MeanCurvatureFromPosition<spacedim>::compute_vector_H(const double &time_step)
+{
+  /*{{{*/
+  /* compute initial curvature        Hn_initial and H_initial */  
+  assemble_system();
+  SparseDirectUMFPACK M;
+  M.initialize(system_matrix);    
+  M.vmult(vector_H, system_rhs);         
+  /*}}}*/
+}
+
+template <int spacedim>
+void MeanCurvatureFromPosition<spacedim>::output_results () 
+{
+  /*{{{*/
+  VectorValuedSolutionSquared<spacedim> computed_mean_curvature_squared("H2");
+  
+  DataOut<dim,DoFHandler<dim,spacedim> > data_out;
+  
+  data_out.add_data_vector (scalar_dof_handler, scalar_H, "scalar_H");
+  data_out.add_data_vector (scalar_dof_handler, exact_scalar_H, "exact_scalar_H");
+  
+  std::vector<DataComponentInterpretation::DataComponentInterpretation> 
+      euler_vector_ci(spacedim, DataComponentInterpretation::component_is_part_of_vector);
+  
+  std::vector<std::string> euler_vector_names (spacedim,"global_euler_vector");
+  
+  data_out.add_data_vector (vector_dof_handler, euler_vector, 
+                            euler_vector_names,
+                            euler_vector_ci);
+  
+  data_out.add_data_vector (vector_dof_handler, vector_H, computed_mean_curvature_squared);
+  
+  //const MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, vector_dof_handler, euler_vector);
+  //data_out.build_patches (mapping,2);
+  data_out.build_patches ();
+
+  char filename[80];
+  sprintf(filename,"./data/vector_mean_curvature.vtk");
+  std::ofstream output (filename);
+  data_out.write_vtk (output);
+  std::cout << "data written to " << filename << std::endl;
+  /*}}}*/
+}
+
+template <int spacedim>
+void MeanCurvatureFromPosition<spacedim>::compute_scalar_H() 
+{
+/*{{{*/
+  /*
+   *    scalar H from vector Hn
+   *
+   *    use scalar fevalues from scalar_fe to build a mass matrix
+   *    M, and pull Hn values from vector_fe, then solve
+   *
+   *    (phi,H) = (phi, Hn*n)
+   *    
+   *    M*scalar_H = Mn*Hn  
+   *
+   */
+  
+  const MappingQEulerian<dim,Vector<double>,spacedim> mapping (2, vector_dof_handler, global_euler_vector);
+   
+  scalar_matrix = 0;
+  scalar_rhs    = 0;
+
+  const QGauss<dim> quadrature_formula (2*vector_fe.degree);
+  FEValues<dim,spacedim> vector_fe_values (mapping, vector_fe, quadrature_formula,
+                                            update_quadrature_points |
+                                            update_values            |
+                                            update_normal_vectors    |
+                                            update_gradients         |
+                                            update_JxW_values);
+  
+  FEValues<dim,spacedim> scalar_fe_values (mapping, scalar_fe, quadrature_formula,
+                                           update_quadrature_points |
+                                           update_values            | 
+                                           update_normal_vectors    |
+                                           update_gradients         |
+                                           update_JxW_values);
+
+  //const unsigned int  vector_dofs_per_cell = vector_fe.dofs_per_cell;
+  const unsigned int  scalar_dofs_per_cell  = scalar_fe.dofs_per_cell;
+  const unsigned int  n_q_points = quadrature_formula.size();
+
+  FullMatrix<double>  local_scalar_matrix     (scalar_dofs_per_cell, scalar_dofs_per_cell);
+  Vector<double>      local_scalar_rhs (scalar_dofs_per_cell);
+  
+  const FEValuesExtractors::Vector W (0);
+  std::vector<types::global_dof_index> local_dof_indices (scalar_dofs_per_cell);
+  std::vector<Tensor<1,spacedim> > local_Hn_values(n_q_points, Tensor<1,spacedim>());
+  
+  typename DoFHandler<dim,spacedim>::active_cell_iterator 
+    vector_cell = vector_dof_handler.begin_active();
+  typename DoFHandler<dim,spacedim>::active_cell_iterator
+    scalar_cell = scalar_dof_handler.begin_active(),
+    endc = scalar_dof_handler.end();
+  
+  for ( ; scalar_cell!=endc; ++scalar_cell, ++vector_cell)
+  { 
+  
+    local_scalar_matrix = 0;
+    local_scalar_rhs    = 0;
+
+    vector_fe_values.reinit (vector_cell);
+    scalar_fe_values.reinit (scalar_cell);
+    
+
+    vector_fe_values[W].get_function_values(Hn,local_Hn_values);
+
+    for (unsigned int i=0; i<scalar_dofs_per_cell; ++i)
+      for (unsigned int j=0; j<scalar_dofs_per_cell; ++j)
+        for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+        {
+
+          local_scalar_matrix(i,j) += scalar_fe_values.shape_value(i,q_point)*
+                                      scalar_fe_values.shape_value(j,q_point)*
+                                      scalar_fe_values.JxW(q_point);
+        }
+
+    for (unsigned int i=0; i<scalar_dofs_per_cell; ++i)
+      for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+      {                          
+        local_scalar_rhs(i) += scalar_fe_values.shape_value(i,q_point)*
+                               (scalar_fe_values.normal_vector(q_point)*local_Hn_values[q_point])*
+                               scalar_fe_values.JxW(q_point);
+      }
+
+    scalar_cell->get_dof_indices (local_dof_indices);
+
+    scalar_constraints.distribute_local_to_global(local_scalar_matrix,
+                                                  local_scalar_rhs,
+                                                  local_dof_indices,
+                                                  scalar_matrix,
+                                                  scalar_rhs);
+  }
+
+  SparseDirectUMFPACK scalar_matrix_direct;
+  scalar_matrix_direct.initialize(scalar_matrix);
+  scalar_matrix_direct.vmult(scalar_H,scalar_rhs);
+  
+  deviation  = scalar_H;
+  deviation -= spontaneous_curvature;
+  
+  scalar_constraints.distribute(scalar_H);
+  scalar_constraints.distribute(deviation);
+/*}}}*/
+}
+/*}}}*/
+
+template <int spacedim>
+void MeanCurvatureFromPosition<spacedim>::run ()
+{
+  /*{{{*/
+  /* geometric parameters */
+  double a,b,c;
+  a = 3;
+  b = 2;
+  c = 1;
+  
+  const int global_refinements = 2;
+  double surface_area;
+  double volume;
+  
+  make_grid_and_global_refine (global_refinements);
+  setup_dofs();
+  initialize_geometry (a,b,c);
+  surface_area = compute_surface_area();
+  volume       = compute_volume();
+  std::cout << "--------------------------------------" << std::endl;
+  printf("surface area:   %0.9f\n", surface_area);
+  printf("volume:         %0.9f\n", volume);
+  std::cout << "--------------------------------------" << std::endl;
+  
+  compute_vector_H ();
+  compute_exact_vector_H();
+  
+  compute_scalar_H ();
+  compute_exact_scalar_H ();
+  
+  output_results ();
+  /*}}}*/
+}
+
+/*}}}*/
+} // end of namespace VectorMeanCurvature 
+
+
+int main ()
+{
+  /*{{{*/
+  try
+  {
+    using namespace dealii;
+    using namespace VectorMeanCurvature;
+    
+    const unsigned int spacedim = 3;
+    MeanCurvatureFromPosition<spacedim> vector_mean_curvature_on_surface;
+    vector_mean_curvature_on_surface.run();
+    
+    return 0;
+
+  }
+  catch (std::exception &exc)
+  {
+      std::cerr << std::endl << std::endl
+                << "----------------------------------------------------"
+                << std::endl;
+      std::cerr << "Exception on processing: " << std::endl
+                << exc.what() << std::endl
+                << "Aborting!" << std::endl
+                << "----------------------------------------------------"
+                << std::endl;
+      return 1;
+  }
+  catch (...)
+  {
+      std::cout << "problem! " << std::endl;
+      return 2;
+  }
+  /*}}}*/
+}
+
+
