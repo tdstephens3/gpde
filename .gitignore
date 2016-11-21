@@ -39,7 +39,7 @@
 *.dll
 *.o
 *.so
-*.pdf
+*.out
 
 # OS generated files #
 ######################

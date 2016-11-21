@@ -13,6 +13,7 @@
  *
  * ---------------------------------------------------------------------
  *
+ *
  */
 
 #include <deal.II/base/quadrature_lib.h>
@@ -324,13 +325,6 @@ Tensor<1,spacedim> ExactVectorMeanCurvatureOnEllipsoid<spacedim>::value(const Po
   normal[2] = p(2)/c;
   normal /= normal.norm();
 
-  //Point<spacedim> chart_point = spherical_manifold.pull_back(unmapped_p);
-  //double theta = chart_point(1);
-  //double phi   = chart_point(2);
-  //
-  //normal_vector[0] = ;
-  //normal_vector[1] = ;
-  //normal_vector[2] = ;
   vector_H  = normal;
   vector_H *= exact_scalar_H.value(p);
 
@@ -750,7 +744,6 @@ void MeanCurvatureFromPosition<spacedim>::compute_scalar_H()
                                            update_gradients         |
                                            update_JxW_values);
 
-  //const unsigned int  vector_dofs_per_cell = vector_fe.dofs_per_cell;
   const unsigned int  scalar_dofs_per_cell  = scalar_fe.dofs_per_cell;
   const unsigned int  n_q_points = quadrature_formula.size();
 
@@ -874,6 +867,10 @@ void MeanCurvatureFromPosition<spacedim>::output_results ()
   data_out.add_data_vector (vector_dof_handler, vector_H, computed_mean_curvature_squared);
   data_out.add_data_vector (vector_dof_handler, exact_vector_H, computed_exact_vector_H_squared);
   
+  /* use the mapping if you don't want to deform your solution by euler_vector
+   * in order to visualize the result */
+  
+  //const MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, vector_dof_handler, euler_vector);
   //data_out.build_patches (mapping,2);
   data_out.build_patches ();
 
@@ -899,7 +896,7 @@ void MeanCurvatureFromPosition<spacedim>::run ()
   b = 2;
   c = 3;
   
-  const int global_refinements = 1;
+  const int global_refinements = 3;
   
   make_grid_and_global_refine (global_refinements);
   setup_dofs();
