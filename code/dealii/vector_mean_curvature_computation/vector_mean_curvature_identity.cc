@@ -870,9 +870,9 @@ void MeanCurvatureFromPosition<spacedim>::output_results ()
   /* use the mapping if you don't want to deform your solution by euler_vector
    * in order to visualize the result */
   
-  //const MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, vector_dof_handler, euler_vector);
-  //data_out.build_patches (mapping,2);
-  data_out.build_patches ();
+  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, vector_dof_handler, euler_vector);
+  data_out.build_patches (mapping,2);
+  //data_out.build_patches ();
 
   char filename[80];
   sprintf(filename,"./data/vector_mean_curvature.vtk");
@@ -920,6 +920,7 @@ void MeanCurvatureFromPosition<spacedim>::run ()
   compute_scalar_error (a,b,c);
   
   output_results ();
+
   /*}}}*/
 }
 
