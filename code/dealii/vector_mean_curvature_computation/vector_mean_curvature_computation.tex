@@ -5,7 +5,6 @@
 \usepackage{amsfonts}
 \usepackage{amssymb}
 \usepackage{hyperref}
-
 %\usepackage{color}
 %\usepackage{graphicx}
 %
@@ -15,12 +14,13 @@
 %\pdfpageheight 11in
 %
 \newcommand{\R}{\mathbb{R}}
-\newcommand{\mbf}[1]{\mathbf{#1}}
+%\newcommand{\mbf}[1]{\mathbf{#1}}
+\newcommand{\mbf}[1]{\boldsymbol{#1}}
 
-\title{Vector Mean Curvature of an Ellipsoid}
+\title{Computing vector curvature and total curvature on a triangulated surface}
 \author{a  \texttt{deal.ii} implementation}
 
-\date{ \today}
+\date{ }
 
 %%%%%%%%%%%%
 \begin{document}         %%% <----------  BEGIN DOCUMENT
@@ -28,44 +28,125 @@
 \maketitle
 
 
-Let $S \subset \R^{d+1}$ be a closed, codimension-1 surface, and let
-$\mathbf{x}_{S}: \hat{S} \to S$ be a parameterization of $S$ from the
-parameteric domain $\hat{S} \subset \R^d$.
+\section*{Introduction}
 
-For concreteness, let $d = 2$ and put $\hat{S} := [0,2\pi] \times [0,\pi]$, and
-$\mathbf{x}_{S} := \left( a \sin \phi \cos \theta, b \sin \phi \sin \theta , c
-\cos \phi  \right)$.
+In this example we show how to compute the vector curvature (sometimes called
+\emph{normal curvature}) $\mbf{h}$ on a parametric surface $S$ in $\R^3$.
+We include a function to extract the (scalar) total curvature $h$ (sometimes
+called \emph{mean curvature}), and finally we test our computations against the
+analytic expression for total curvature on ellipsoids.  
 
-$\textbf{id}_{S}: S \to S \subset \R^3$ Need to think about $\textbf{id}_{S}$ acting on
-quadrature points $p_{\ell} \in \hat{K}$, so $\textbf{id}_{S}(p_{\ell}) :=
-\textbf{id}_{S}(\mathbf{x}_{K}(p_{\ell}))$
+We follow the notation of **step 38** and introduce the codimension 1 surface
+$S$ which is known by a parameterization $\mbf{x}_{S}: \hat{S} \to S$, where
+$\hat{S} \subset \R^2$, and $\mbf{x}$ takes points $\hat{\mbf{x}} =
+(\hat{x}_1, \hat{x}_2) \in \hat{S}$ to $S$.
 
-\url{https://www.dealii.org/8.4.1/doxygen/deal.II/group\_\_UpdateFlags.html}
+The total curvature $h$ on $S$ is defined at every point
+$\mbf{x}$ and can be described as the sum of the principle curvatures
+$\kappa_1(\mbf{x}) + \kappa_2(\mbf{x})$ of $S$, hence 
+\[h(\mbf{x}) =  \kappa_1(\mbf{x}) + \kappa_2(\mbf{x}).\]
+Another way to think about the total curvature in a geometric sense is as the
+tangential divergence of the normal vector, that is $h = \text{div}_{S}
+\mbf{n}$  (this will appear again below).
+
+The vector curvature $\mbf{h}$ on $S$ is simply defined as the (scalar) total
+curvature times the normal vector, hence
+\[\mbf{h}(\mbf{x}) = h(\mbf{x})\mbf{n}(\mbf{x}).\]   
+It is the vector curvature that we will be computing first because, quite unlike the
+(scalar) total curvature, $\mbf{h}$ has an emminently useful formulation in
+terms of the identity $\text{\bf id}_S : \mbf{x} \mapsto \mbf{x}$, and the Laplace Beltrami operator $\Delta_S$ on
+$S$.  In fact, 
+\[ - \Delta_S \, \text{\bf id}_S = \mbf{h}.\]
+
+There is more wrapped up in the notation above than first meets the eye.
+First, $\text{\bf id}_S$ is vector-valued, so the Laplace-Beltrami
+operator here is meant to be taken componentwise (and will be made explicit
+below). Second, recall that we have defined $S$ through the parameterization
+$\mbf{x} : (\hat{x}_1, \hat{x}_2) \to S \subset \R^3$.  This makes $\text{\bf
+id}_S$ appear as the funtion $\text{\bf id}_S :=  \left( \text{\bf id} \circ
+\mbf{x}\right) (\hat{x}_1,\hat{x}_2) = \mbf{x}(\hat{x}_1,\hat{x}_2)$ for
+$(\hat{x}_1,\hat{x}_2) \in \hat{S} \subset \R^2$.  In this setting, the
+derivatives involved in $\Delta_S$ must be taken back in $\hat{S}$, which is
+cumbersome and best left for \texttt{deal.ii} to do for us (cf **step 38**), yet we want to
+unpack at least some of what has been written above before we proceed with the
+program.  To this end, we hypothesize an extension of $\text{\bf id}_S$ to all
+of $\R^3$ (which is absolutely trivial in this case!), and take our derivatives in
+$\R^3$. 
+
+We now quickly show that it is reasonable that we may get the vector curvature
+from the surface Laplacian of the identity: Let $\text{\bf id} : \R^3 \to \R^3$
+extend the identity $\text{\bf id}_S$ to at least a neighborhood of $S$ in $\R^3$, and write $\text{\bf
+id}(\mbf{x}) = \left( \text{id}_1(\mbf{x}), \text{id}_2(\mbf{x}),\text{id}_3(\mbf{x}) \right) = \left( x_1, x_2, x_3 \right)$. Then generalizing the
+expression for the Laplace Beltrami operator in **step 38** to vector-valued
+functions, we write
+\[
+ \Delta_S \, \text{\bf id}_S :=
+  \left( \begin{array}{c} 
+     \Delta \text{id}_1  - \mbf{n}^T D^2 \text{id}_1 \, \mbf{n} - (\mbf{n} \cdot \nabla \text{id}_1)\left( \nabla \cdot \mbf{n} - \mbf{n}^T D\mbf{n} \, \mbf{n} \right) \\ 
+     \Delta \text{id}_2  - \mbf{n}^T D^2 \text{id}_2 \, \mbf{n} - (\mbf{n} \cdot \nabla \text{id}_2)\left( \nabla \cdot \mbf{n} - \mbf{n}^T D\mbf{n} \, \mbf{n} \right) \\ 
+     \Delta \text{id}_3  - \mbf{n}^T D^2 \text{id}_3 \, \mbf{n} - (\mbf{n} \cdot \nabla \text{id}_3)\left( \nabla \cdot \mbf{n} - \mbf{n}^T D\mbf{n} \, \mbf{n} \right) 
+  \end{array} \right). 
+\]
+First notice that $\left( \nabla \cdot \mbf{n} - \mbf{n}^T D\mbf{n} \, \mbf{n}
+\right) = \text{div}_{S} \mbf{n}$, which we claimed to be $h(\mbf{x})$ above
+(see **step 38** and \cite{} for more about tangential derivatives).  Since
+we're dealing with identity functions all around, $\Delta \text{id}_i = 0$ and
+$D^2 \text{id}_i$ is the zero matrix for $i=1,2,3$, leaving us with 
+\[
+ \Delta_S \, \text{\bf id}_S =
+  \left( \begin{array}{c} 
+     - (\mbf{n} \cdot \left( 1,0,0 \right)) h(\mbf{x})  \\ 
+     - (\mbf{n} \cdot \left( 0,1,0 \right)) h(\mbf{x})  \\ 
+     - (\mbf{n} \cdot \left( 0,0,1 \right)) h(\mbf{x}) 
+  \end{array} \right) \\
+  = 
+  \left( \begin{array}{c} 
+     - h(\mbf{x}) n_1  \\ 
+     - h(\mbf{x}) n_2  \\ 
+     - h(\mbf{x}) n_3 
+  \end{array} \right) 
+  = - \mbf{h}(\mbf{x}).
+\]
+
+\section*{Strategy For Computations}
+
+Presumably the purpose of computing curvature on a surface is to then use it in
+further computations.  This means that we should make sure the data structure that holds
+curvature information is be compatible with further finite element comptuations
+in \texttt{deal.ii}.  All this is to say that we will use \texttt{deali.ii} to
+`solve' $- \Delta_S \, \text{\bf id}_S = \mbf{h}$ for $\mbf{h}$ (more
+correctly, we will weakly enforce the identity $\nabla_S \boldsymbol{\varphi}
+\nabla_S \text{\bf id} \overset{\text{id}}{=} \mbf{\varphi}\mbf{h}$).  For this
+all we really need is a decent mesh of points lying on $S$ so that we have a
+discrete representation of $\text{\bf id}_S$.  Instead of only specifying the
+surface $S$ by vertices of a mesh, we will instead specify a
+\texttt{MappingQEulerian<dim,spacedim> mapping(\dots)} object initialized with a callable
+\texttt{Function<spacedim> map\_to\_S(spacedim)} which parameterizes $S$.  This
+allows us to use higher-order finite elements because we can specify $S$ at
+**support points** as well as at the vertices, enhancing our discrete
+representation of $\text{\bf id}_S$ and thereby enhancing the accuracy of our
+approximation of $\mbf{h}$. 
+
+\section*{Test Case}
+
+Ellipsoid parameterized, $\hat{S} = [0,2\pi] \times [0, \pi]$ by 
+\[  \mbf{x}(\hat{x}_1, \hat{x}_2) = 
+   \left( \begin{array}{c} 
+      a\sin \hat{x}_1 \cos \hat{x}_2 \\
+      b\sin \hat{x}_1 \sin \hat{x}_2 \\
+            c\cos\hat{x}_1 
+   \end{array} \right)
+\]
+has total curvature 
+\begin{align*}
+   h(\hat{x}_1, \hat{x}_2) &= 
+\end{align*}
+
+But we don't reimplement the parameterization here, rather we simply use
+\texttt{SphericalManfold<dim,spacedim> sphere}.  The \texttt{pull\_back} and
+\texttt{push\_forward} functions allow us to write our functions in terms of
+$\mbf{x} \in \R^3$ rather than $\hat{\mbf{x}} \in \hat{S} \subset \R^2$. 
 
 
-\begin{equation}
-   \sum_{\ell = 1}^{N} \left( \nabla_{K} \boldsymbol{\phi}_{i}(p_{\ell}) \,:\,
-   \nabla_{K} \textbf{id}_{K}(p_{\ell}) \right)
-   \, J{\times}W(p_{\ell})
-   \label{}
-\end{equation}
-
-
-\begin{equation}
-   \Delta \,\textbf{id}_{S} = h\boldsymbol{\nu} =: \mbf{h}
-   \label{vector_identity}
-\end{equation}
-
-
-\cite{dealII84}
-
-
-
-
-
-
-\newpage
-\bibliographystyle{plain}
-\bibliography{bib}
 
 \end{document}

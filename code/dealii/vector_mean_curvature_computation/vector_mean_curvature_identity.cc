@@ -83,9 +83,10 @@ class MeanCurvatureFromPosition
 
     Triangulation<dim,spacedim> triangulation;
     Vector<double>              euler_vector;          // defines geometry through MappingQEulerian
+    const unsigned int          mapping_degree = 1;
     
     /* - data structures for vector mean curvature - */
-    const unsigned int          vector_fe_degree = 2;
+    const unsigned int          vector_fe_degree = 1;
     FESystem<dim,spacedim>      vector_fe; 
     DoFHandler<dim,spacedim>    vector_dof_handler;
     
@@ -97,7 +98,7 @@ class MeanCurvatureFromPosition
     Vector<double>              exact_vector_H;        // exact solution for vector mean curvature
     
     /* - data structures for scalar parameters - */
-    const unsigned int          scalar_fe_degree = 2;
+    const unsigned int          scalar_fe_degree = 1;
     FE_Q<dim,spacedim>          scalar_fe; 
     DoFHandler<dim,spacedim>    scalar_dof_handler;
     
@@ -449,7 +450,7 @@ template <int spacedim>
 double MeanCurvatureFromPosition<spacedim>::compute_surface_area ()
 {
   /*{{{*/
-  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, vector_dof_handler, euler_vector);
+  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   
   const QGauss<dim> quadrature_formula (2*vector_fe.degree);
   FEValues<dim,spacedim> fe_values (mapping, vector_fe, quadrature_formula,
@@ -480,7 +481,7 @@ template<int spacedim>
 double MeanCurvatureFromPosition<spacedim>::compute_volume ()
 {
   /*{{{*/
-  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, vector_dof_handler, euler_vector);
+  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   
   const QGauss<dim> quadrature_formula (2*vector_fe.degree);
   FEValues<dim,spacedim> fe_values (mapping, vector_fe, quadrature_formula,
@@ -661,16 +662,11 @@ void MeanCurvatureFromPosition<spacedim>::assemble_system ()
 template <int spacedim>
 void MeanCurvatureFromPosition<spacedim>::compute_vector_H()
 {
-  /*{{{*/
   /* compute vector mean curvature  */  
   assemble_system();
   SparseDirectUMFPACK M;
   M.initialize(vector_system_matrix);    
   M.vmult(vector_H, vector_system_rhs);   
-  
-  if (verbose)
-    std::cout << "vector mean curvature computed" << std::endl;
-  /*}}}*/
 }
 
 template <int spacedim>
@@ -678,7 +674,7 @@ void MeanCurvatureFromPosition<spacedim>::compute_exact_vector_H(const double &a
 {
   /*{{{*/
   ExactVectorMeanCurvatureOnEllipsoid<spacedim> tensor_H(a,b,c);
-  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, vector_dof_handler, euler_vector);
+  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   VectorTools::interpolate(mapping,vector_dof_handler, 
                            VectorFunctionFromTensorFunction<spacedim>(tensor_H,0,spacedim),
                            exact_vector_H);
@@ -694,7 +690,7 @@ void MeanCurvatureFromPosition<spacedim>::compute_vector_error(const double &a, 
   /*{{{*/
   ExactVectorMeanCurvatureOnEllipsoid<spacedim> tensor_H(a,b,c);
   const QGauss<dim> quadrature_formula (2*vector_fe.degree);
-  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, vector_dof_handler, euler_vector);
+  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   VectorTools::integrate_difference (mapping, vector_dof_handler, 
                                      vector_H, 
                                      VectorFunctionFromTensorFunction<spacedim>(tensor_H,0,spacedim), 
@@ -813,7 +809,7 @@ template <int spacedim>
 void MeanCurvatureFromPosition<spacedim>::compute_exact_scalar_H(const double &a, const double &b, const double &c) 
 {
   /*{{{*/
-  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, vector_dof_handler, euler_vector);
+  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   VectorTools::interpolate(mapping,scalar_dof_handler, 
                            ExactScalarMeanCurvatureOnEllipsoid<spacedim>(a,b,c),
                            exact_scalar_H);
@@ -828,7 +824,7 @@ void MeanCurvatureFromPosition<spacedim>::compute_scalar_error(const double &a, 
 {
   /*{{{*/
   const QGauss<dim> quadrature_formula (2*scalar_fe.degree);
-  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, vector_dof_handler, euler_vector);
+  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   VectorTools::integrate_difference (mapping, scalar_dof_handler, 
                                      scalar_H, ExactScalarMeanCurvatureOnEllipsoid<spacedim>(a,b,c), diff_scalar_H,
                                      quadrature_formula, VectorTools::L2_norm);
@@ -870,9 +866,9 @@ void MeanCurvatureFromPosition<spacedim>::output_results ()
   /* use the mapping if you don't want to deform your solution by euler_vector
    * in order to visualize the result */
   
-  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(2, vector_dof_handler, euler_vector);
-  data_out.build_patches (mapping,2);
-  //data_out.build_patches ();
+  //const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
+  //data_out.build_patches (mapping,mapping_degree);
+  data_out.build_patches ();
 
   char filename[80];
   sprintf(filename,"./data/vector_mean_curvature.vtk");
@@ -896,7 +892,7 @@ void MeanCurvatureFromPosition<spacedim>::run ()
   b = 2;
   c = 3;
   
-  const int global_refinements = 3;
+  const int global_refinements = 5;
   
   make_grid_and_global_refine (global_refinements);
   setup_dofs();
