@@ -1,0 +1,38 @@
+first install trilinos and p4est
+
+----------------------------------------------------
+
+for Trilinos 12.4, included in this directory
+then:
+
+cmake \
+-DTrilinos_ENABLE_Sacado=ON \
+-DTrilinos_ENABLE_MueLu:BOOL=ON \
+-DTrilinos_ENABLE_Stratimikos=ON \
+-DCMAKE_BUILD_TYPE=RELEASE \
+-DCMAKE_CXX_FLAGS="-g -O3" \
+-DCMAKE_C_FLAGS="-g -O3" \
+-DCMAKE_FORTRAN_FLAGS="-g -O5" \
+-DTrilinos_EXTRA_LINK_FLAGS=-lgfortran \
+-DCMAKE_VERBOSE_MAKEFILE=FALSE  \
+-DTrilinos_VERBOSE_CONFIGURE=FALSE  \
+-DTPL_ENABLE_MPI=ON  \
+-DBUILD_SHARED_LIBS=ON  \
+-DCMAKE_INSTALL_PREFIX:PATH=/usr/local/trilinos \
+../trilinos-12.4.2-Source
+
+--------------------------------------------------------------------
+
+For dealii 8.4.1:
+ 
+cmake \ 
+-DDEAL_II_WITH_P4EST=ON  \
+-DP4EST_DIR=/usr/local/p4est  \
+-DDEAL_II_WITH_PETSC=ON  \
+-DDEAL_II_WITH_TRILINOS=ON  \
+-DTRILINOS_DIR=/usr/local/trilinos  \
+-DDEAL_II_WITH_MPI=ON  \
+-DCMAKE_INSTALL_PREFIX=/usr/local/dealii \
+../dealii-8.4.1
+
+
