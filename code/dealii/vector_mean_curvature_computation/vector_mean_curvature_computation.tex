@@ -38,23 +38,26 @@ analytic expression for total curvature on ellipsoids.
 
 We follow the notation of **step 38** and introduce the codimension 1 surface
 $S$ which is known by a parameterization $\mbf{x}_{S}: \hat{S} \to S$, where
-$\hat{S} \subset \R^2$, and $\mbf{x}$ takes points $\hat{\mbf{x}} =
-(\hat{x}_1, \hat{x}_2) \in \hat{S}$ to $S$.
+$\hat{S} \subset \R^2$, and $\mbf{x}_S$ takes points $\hat{\mbf{x}} =
+(\hat{x}_1, \hat{x}_2) \in \hat{S}$ to $S$.  In what follows we will continue
+to use the cumbersome notation $\mbf{x}_S$ to denote points in $\R^3$ that lie
+on $S$, and $\mbf{x}$ to denote arbitrary points in $\R^3$.  The purpose of
+this is to emphasize \dots 
 
 The total curvature $h$ on $S$ is defined at every point
-$\mbf{x}$ and can be described as the sum of the principle curvatures
-$\kappa_1(\mbf{x}) + \kappa_2(\mbf{x})$ of $S$, hence 
-\[h(\mbf{x}) =  \kappa_1(\mbf{x}) + \kappa_2(\mbf{x}).\]
+$\mbf{x}_S \in S$ and can be described as the sum of the principle curvatures
+$\kappa_1(\mbf{x}_S) + \kappa_2(\mbf{x}_S)$ of $S$, hence 
+\[h(\mbf{x}_S) =  \kappa_1(\mbf{x}_S) + \kappa_2(\mbf{x}_S).\]
 Another way to think about the total curvature in a geometric sense is as the
 tangential divergence of the normal vector, that is $h = \text{div}_{S}
-\mbf{n}$  (this will appear again below).
+\mbf{n} \overset{\text{id}}{=} \nabla_S \cdot \mbf{n}$  (this will appear again below).
 
 The vector curvature $\mbf{h}$ on $S$ is simply defined as the (scalar) total
-curvature times the normal vector, hence
-\[\mbf{h}(\mbf{x}) = h(\mbf{x})\mbf{n}(\mbf{x}).\]   
-It is the vector curvature that we will be computing first because, quite unlike the
-(scalar) total curvature, $\mbf{h}$ has an emminently useful formulation in
-terms of the identity $\text{\bf id}_S : \mbf{x} \mapsto \mbf{x}$, and the Laplace Beltrami operator $\Delta_S$ on
+curvature times the normal vector, hence \[\mbf{h}(\mbf{x}_S) =
+h(\mbf{x}_S)\mbf{n}(\mbf{x}_S).\]   It is the vector curvature that we will be
+computing first because, quite unlike the (scalar) total curvature, $\mbf{h}$
+has an emminently useful formulation in terms of the identity $\text{\bf id}_S
+: \mbf{x}_S \mapsto \mbf{x}_S$, and the Laplace Beltrami operator $\Delta_S$ on
 $S$.  In fact, 
 \[ - \Delta_S \, \text{\bf id}_S = \mbf{h}.\]
 
@@ -62,9 +65,9 @@ There is more wrapped up in the notation above than first meets the eye.
 First, $\text{\bf id}_S$ is vector-valued, so the Laplace-Beltrami
 operator here is meant to be taken componentwise (and will be made explicit
 below). Second, recall that we have defined $S$ through the parameterization
-$\mbf{x} : (\hat{x}_1, \hat{x}_2) \to S \subset \R^3$.  This makes $\text{\bf
+$\mbf{x}_S : (\hat{x}_1, \hat{x}_2) \to S \subset \R^3$.  This makes $\text{\bf
 id}_S$ appear as the funtion $\text{\bf id}_S :=  \left( \text{\bf id} \circ
-\mbf{x}\right) (\hat{x}_1,\hat{x}_2) = \mbf{x}(\hat{x}_1,\hat{x}_2)$ for
+\mbf{x}_S\right) (\hat{x}_1,\hat{x}_2) = \mbf{x}_S(\hat{x}_1,\hat{x}_2)$ for
 $(\hat{x}_1,\hat{x}_2) \in \hat{S} \subset \R^2$.  In this setting, the
 derivatives involved in $\Delta_S$ must be taken back in $\hat{S}$, which is
 cumbersome and best left for \texttt{deal.ii} to do for us (cf **step 38**), yet we want to
@@ -88,24 +91,25 @@ functions, we write
   \end{array} \right). 
 \]
 First notice that $\left( \nabla \cdot \mbf{n} - \mbf{n}^T D\mbf{n} \, \mbf{n}
-\right) = \text{div}_{S} \mbf{n}$, which we claimed to be $h(\mbf{x})$ above
+\right) = \text{div}_{S} \mbf{n}$, which we claimed to be $h(\mbf{x}_S)$ above
 (see **step 38** and \cite{} for more about tangential derivatives).  Since
-we're dealing with identity functions all around, $\Delta \text{id}_i = 0$ and
+we're dealing with identity functions all around, we have that $\nabla
+\text{id}_i = \mbf{e}_i$,  $\Delta \text{id}_i = 0,$ and
 $D^2 \text{id}_i$ is the zero matrix for $i=1,2,3$, leaving us with 
 \[
  \Delta_S \, \text{\bf id}_S =
   \left( \begin{array}{c} 
-     - (\mbf{n} \cdot \left( 1,0,0 \right)) h(\mbf{x})  \\ 
-     - (\mbf{n} \cdot \left( 0,1,0 \right)) h(\mbf{x})  \\ 
-     - (\mbf{n} \cdot \left( 0,0,1 \right)) h(\mbf{x}) 
+     - (\mbf{n} \cdot \left( 1,0,0 \right)) h(\mbf{x}_S)  \\ 
+     - (\mbf{n} \cdot \left( 0,1,0 \right)) h(\mbf{x}_S)  \\ 
+     - (\mbf{n} \cdot \left( 0,0,1 \right)) h(\mbf{x}_S) 
   \end{array} \right) \\
   = 
   \left( \begin{array}{c} 
-     - h(\mbf{x}) n_1  \\ 
-     - h(\mbf{x}) n_2  \\ 
-     - h(\mbf{x}) n_3 
+     - h(\mbf{x}_S) n_1  \\ 
+     - h(\mbf{x}_S) n_2  \\ 
+     - h(\mbf{x}_S) n_3 
   \end{array} \right) 
-  = - \mbf{h}(\mbf{x}).
+  = - \mbf{h}(\mbf{x}_S).
 \]
 
 \section*{Strategy For Computations}
@@ -115,7 +119,7 @@ further computations.  This means that we should make sure the data structure th
 curvature information is be compatible with further finite element comptuations
 in \texttt{deal.ii}.  All this is to say that we will use \texttt{deali.ii} to
 `solve' $- \Delta_S \, \text{\bf id}_S = \mbf{h}$ for $\mbf{h}$ (more
-correctly, we will weakly enforce the identity $\nabla_S \boldsymbol{\varphi}
+precisely, we will weakly enforce the identity $\nabla_S \boldsymbol{\varphi}
 \nabla_S \text{\bf id} \overset{\text{id}}{=} \mbf{\varphi}\mbf{h}$).  For this
 all we really need is a decent mesh of points lying on $S$ so that we have a
 discrete representation of $\text{\bf id}_S$.  Instead of only specifying the
@@ -127,6 +131,13 @@ allows us to use higher-order finite elements because we can specify $S$ at
 representation of $\text{\bf id}_S$ and thereby enhancing the accuracy of our
 approximation of $\mbf{h}$. 
 
+As noted in **step-38**, the user will not be expressing derivatives back in
+$\hat{S}$.  Rather, the user will specify a \texttt{Mapping} on a
+\texttt{Triangulation} (or specifying just a \texttt{Triangulation}, and
+letting \texttt{deal.ii} associate a default piecewise-linear \texttt{Mapping}
+on that \texttt{Triangulation})
+
+
 \section*{Test Case}
 
 Ellipsoid parameterized, $\hat{S} = [0,2\pi] \times [0, \pi]$ by 
@@ -137,15 +148,54 @@ Ellipsoid parameterized, $\hat{S} = [0,2\pi] \times [0, \pi]$ by
             c\cos\hat{x}_1 
    \end{array} \right)
 \]
-has total curvature 
+has total (scalar) curvature 
 \begin{align*}
-   h(\hat{x}_1, \hat{x}_2) &= 
+   h(\hat{x}_1, \hat{x}_2) &= \frac{2abc\left[ 3(a^2 + b^2) + 2c^2 + (a^2 + b^2 -
+   2c^2)\cos(2\hat{x}_1) - 2(a^2 - b^2)\cos(2\hat{x}_2)\sin^2 \hat{x}_1 \right]}
+                           {  8\left[a^2 b^2 \cos^2 \hat{x}_1 + c^2(b^2\cos^2 \hat{x}_2 +
+                           a^2\sin^2 \hat{x}_2 ) \sin^2 \hat{x}_1 \right]^{3/2}}
 \end{align*}
 
-But we don't reimplement the parameterization here, rather we simply use
-\texttt{SphericalManfold<dim,spacedim> sphere}.  The \texttt{pull\_back} and
-\texttt{push\_forward} functions allow us to write our functions in terms of
-$\mbf{x} \in \R^3$ rather than $\hat{\mbf{x}} \in \hat{S} \subset \R^2$. 
+\begin{verbatim}
+template<int spacedim>
+double ExactScalarMeanCurvatureOnEllipsoid<spacedim>::value(const Point<spacedim> &p, const unsigned int )  const
+{
+  Point<spacedim> unmapped_p(p(0)/a, p(1)/b,  p(2)/c);
+
+  Point<spacedim> chart_point = spherical_manifold.pull_back(unmapped_p);
+  // double radius = chart_point(0); 
+  double x1_hat = chart_point(1);
+  double x2_hat = chart_point(2);
+  ...  
+}
+\end{verbatim}
+
+
+We don't reimplement the parameterization from $\hat{S}$ to $\R^3$ here -- instead we
+use the built-in \texttt{SphericalManfold<dim,spacedim> sphere} and rescale
+\texttt{sphere} in $\R^3$.  The
+\texttt{pull\_back} and \texttt{push\_forward} functions allow us to write our
+functions in terms of $\mbf{x} \in \R^3$ rather than $\hat{\mbf{x}} \in \hat{S}
+\subset \R^2$. 
+
+\begin{verbatim}
+template<int spacedim>
+Tensor<1,spacedim> ExactVectorMeanCurvatureOnEllipsoid<spacedim>::value(const Point<spacedim> &p)  const
+{
+  Tensor<1,spacedim> normal,vector_H;
+  normal[0] = p(0)/a;
+  normal[1] = p(1)/b;
+  normal[2] = p(2)/c;
+  normal /= normal.norm();
+
+  vector_H  = normal;
+  vector_H *= exact_scalar_H.value(p);
+
+  return vector_H;
+}
+\end{verbatim}
+
+\section*{Implementation}
 
 
 

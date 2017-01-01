@@ -284,7 +284,6 @@ template<int spacedim>
 double ExactScalarMeanCurvatureOnEllipsoid<spacedim>::value(const Point<spacedim> &p, const unsigned int )  const
 {
   /*{{{*/
-  
   Point<spacedim> unmapped_p(p(0)/a, p(1)/b,  p(2)/c);
 
   Point<spacedim> chart_point = spherical_manifold.pull_back(unmapped_p);
