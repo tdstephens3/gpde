@@ -2,7 +2,6 @@
  *
  * vector_mean_curvature_identity.cc      Nov 16, 2016
  *
- *  Author: TOM STEPHENS, August 2016
  *
  * The deal.II library is free software; you can use it, redistribute
  * it, and/or modify it under the terms of the GNU Lesser General
@@ -11,28 +10,36 @@
  * The full text of the license can be found in the file LICENSE at
  * the top level of the deal.II distribution.
  *
+ *  Author: Tom Stephens
  * ---------------------------------------------------------------------
  *
  *
  */
 
+// @sect1{Include files}
+//
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/function.h>
 #include <deal.II/base/tensor_function.h>
+
 #include <deal.II/grid/tria.h>
 #include <deal.II/grid/manifold_lib.h>
 #include <deal.II/grid/grid_generator.h>
+
 #include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/vector.h>
 #include <deal.II/lac/sparse_direct.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
+
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_accessor.h>
 #include <deal.II/dofs/dof_tools.h>
+
 #include <deal.II/fe/fe_system.h>
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/fe/mapping_q_eulerian.h>
+
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/vector_tools.h>
 #include <deal.II/numerics/error_estimator.h>
@@ -43,18 +50,12 @@ namespace VectorMeanCurvature
 {
   using namespace dealii;
 
-
-/* ********************************** 
- *
- * MeanCurvatureFromPosition<spacedim> class definition
- *
- * */
+// @sect1{The <code>MeanCurvature</code> class template}
 template <int spacedim>
-class MeanCurvatureFromPosition
+class MeanCurvature
 {
-  /*{{{*/
   public:
-    MeanCurvatureFromPosition () ;
+    MeanCurvature () ;
     void run ();
   
   private:
@@ -94,8 +95,8 @@ class MeanCurvatureFromPosition
     SparseMatrix<double>        vector_system_matrix;
     
     Vector<double>              vector_system_rhs;  
-    Vector<double>              vector_H;              // vector mean curvature
-    Vector<double>              exact_vector_H;        // exact solution for vector mean curvature
+    Vector<double>              vector_H;          // vector mean curvature
+    Vector<double>              exact_vector_H;    // exact solution for vector mean curvature
     
     /* - data structures for scalar parameters - */
     const unsigned int          scalar_fe_degree = 1;
@@ -106,27 +107,18 @@ class MeanCurvatureFromPosition
     SparseMatrix<double>        scalar_system_matrix;
     
     Vector<double>              scalar_system_rhs;       
-    Vector<double>              scalar_H;               // scalar mean curvature
-    Vector<double>              exact_scalar_H;         // exact solution for scalar mean curvature
+    Vector<double>              scalar_H;           // scalar mean curvature
+    Vector<double>              exact_scalar_H;     // exact solution for scalar mean curvature
     
-    Vector<double>              diff_scalar_H;         // difference between 
-                                                        // computed scalar_H and exact_scalar_H
-    Vector<double>              diff_vector_H;         // difference between 
-                                                        // computed vector_H and exact_vector_H
-    /*}}}*/
+    Vector<double>              exact_minus_computed_scalar_H; // exact_scalar_H - computed scalar_H 
+    Vector<double>              exact_minus_computed_vector_H; // exact_vector_H - computed vector_H 
 };
 
 
-/* ********************************** 
- *
- * Function<spacedim> classes 
- *
- * */
-/*{{{*/
+// @sect1{classed derived from <code>Function<spacedim></code>}
 template <int spacedim>
 class Identity : public Function<spacedim>
 {
-/*{{{*/
   public:
     Identity() : Function<spacedim>(3) {}
     
@@ -138,45 +130,37 @@ class Identity : public Function<spacedim>
     virtual Tensor<2,spacedim> symmetric_grad(const Tensor<1,spacedim> &unit_normal) const;
     virtual Tensor<2,spacedim> shape_grad(const Tensor<1,spacedim> &unit_normal) const;
     virtual Tensor<1,spacedim> shape_grad_component(const Tensor<1,spacedim> &unit_normal, const unsigned int component) const;
-/*}}}*/
 };
 
 template<int spacedim>
 double Identity<spacedim>::value(const Point<spacedim> &p, const unsigned int component)  const
 {
-  /*{{{*/
   return p(component);
-  /*}}}*/
 }
 
 template<int spacedim>
 void Identity<spacedim>::vector_value(const Point<spacedim> &p, Vector<double> &value) const
 {
-  /*{{{*/
   for (unsigned int c=0; c<this->n_components; ++c) 
   {
     value(c) = Identity<spacedim>::value(p,c);
   }
-  /*}}}*/
 }
 
 template <int spacedim>
 void Identity<spacedim>::vector_value_list (const std::vector<Point<spacedim> > &points,
                                             std::vector<Vector<double> >   &value_list) const
 {
-  /*{{{*/
   Assert (value_list.size() == points.size(),
           ExcDimensionMismatch (value_list.size(), points.size()));
   const unsigned int n_points = points.size();
   for (unsigned int p=0; p<n_points; ++p)
     vector_value (points[p], value_list[p]);
-  /*}}}*/
 }
 
 template <int spacedim>
 Tensor<2,spacedim> Identity<spacedim>::symmetric_grad(const Tensor<1,spacedim> &unit_normal) const
 {
-  /*{{{*/
   Tensor<2,spacedim> eye, shape_grad, shape_grad_T;
   eye = 0; eye[0][0] = 1; eye[1][1] = 1; eye[2][2] = 1;
   Tensor<2,spacedim> nnT;
@@ -184,25 +168,21 @@ Tensor<2,spacedim> Identity<spacedim>::symmetric_grad(const Tensor<1,spacedim> &
   shape_grad = eye - nnT;
   shape_grad_T = transpose(shape_grad);
   return shape_grad + shape_grad_T;
-  /*}}}*/
 }
 
 template <int spacedim>
 Tensor<2,spacedim> Identity<spacedim>::shape_grad(const Tensor<1,spacedim> &unit_normal) const
 {
-  /*{{{*/
   Tensor<2,spacedim> eye;
   eye = 0; eye[0][0] = 1; eye[1][1] = 1; eye[2][2] = 1;
   Tensor<2,spacedim> nnT;
   nnT = outer_product(unit_normal,unit_normal);
   return eye - nnT;
-  /*}}}*/
 }
 
 template <int spacedim>
 Tensor<1,spacedim> Identity<spacedim>::shape_grad_component(const Tensor<1,spacedim> &unit_normal, const unsigned int component) const
 {
-  /*{{{*/
   Tensor<2,spacedim> full_shape_grad = shape_grad(unit_normal);
   Tensor<1,spacedim> grad_component;
 
@@ -211,13 +191,11 @@ Tensor<1,spacedim> Identity<spacedim>::shape_grad_component(const Tensor<1,space
   grad_component[2] = full_shape_grad[component][2];
 
   return grad_component;
-  /*}}}*/
 }
 
 template <int spacedim>
 class MapToEllipsoid: public Function<spacedim>
 {
-/*{{{*/
   public:
     MapToEllipsoid(double a, double b, double c) : Function<spacedim>(3), abc_coeffs{a,b,c}  {}
     
@@ -227,48 +205,40 @@ class MapToEllipsoid: public Function<spacedim>
     virtual double value (const Point<spacedim> &p, const unsigned int component = 0) const;
   private:
     double abc_coeffs[3];
-/*}}}*/
 };
 
 template<int spacedim>
 double MapToEllipsoid<spacedim>::value(const Point<spacedim> &p, const unsigned int component)  const
 {
-  /*{{{*/
   
   double norm_p = p.distance(Point<spacedim>(0,0,0));
   return abc_coeffs[component]*p(component)/norm_p - p(component);   
 
-  /*}}}*/
 }
 
 template<int spacedim>
 void MapToEllipsoid<spacedim>::vector_value(const Point<spacedim> &p, Vector<double> &value) const
 {
-  /*{{{*/
   for (unsigned int c=0; c<this->n_components; ++c) 
   {
     value(c) = MapToEllipsoid<spacedim>::value(p,c);
   }
-  /*}}}*/
 }
 
 template <int spacedim>
 void MapToEllipsoid<spacedim>::vector_value_list (const std::vector<Point<spacedim> > &points,
                                             std::vector<Vector<double> >   &value_list) const
 {
-  /*{{{*/
   Assert (value_list.size() == points.size(),
           ExcDimensionMismatch (value_list.size(), points.size()));
   const unsigned int n_points = points.size();
   for (unsigned int p=0; p<n_points; ++p)
     MapToEllipsoid<spacedim>::vector_value (points[p], value_list[p]);
-  /*}}}*/
 }
 
 template <int spacedim>
 class ExactScalarMeanCurvatureOnEllipsoid: public Function<spacedim>
 {
-/*{{{*/
   public:
     ExactScalarMeanCurvatureOnEllipsoid (double a, double b, double c) : Function<spacedim>(1), a(a), b(b), c(c), abc_coeffs{a,b,c}, spherical_manifold(Point<spacedim>(0,0,0))  {}
     
@@ -277,13 +247,11 @@ class ExactScalarMeanCurvatureOnEllipsoid: public Function<spacedim>
     double a,b,c;
     double abc_coeffs[3];
     SphericalManifold<2,spacedim> spherical_manifold;
-/*}}}*/
 };
 
 template<int spacedim>
 double ExactScalarMeanCurvatureOnEllipsoid<spacedim>::value(const Point<spacedim> &p, const unsigned int )  const
 {
-  /*{{{*/
   Point<spacedim> unmapped_p(p(0)/a, p(1)/b,  p(2)/c);
 
   Point<spacedim> chart_point = spherical_manifold.pull_back(unmapped_p);
@@ -298,13 +266,11 @@ double ExactScalarMeanCurvatureOnEllipsoid<spacedim>::value(const Point<spacedim
                                 + pow(a,2)*pow(sin(phi),2))*pow(sin(theta),2)),1.5) );
   
   return -exact_mean_curv;
-  /*}}}*/
 }
 
 template <int spacedim>
 class ExactVectorMeanCurvatureOnEllipsoid: public TensorFunction<1,spacedim>
 {
-/*{{{*/
   public:
     ExactVectorMeanCurvatureOnEllipsoid (double a, double b, double c) : TensorFunction<1,spacedim>(), a(a), b(b), c(c), exact_scalar_H(a,b,c) {}
     
@@ -312,13 +278,11 @@ class ExactVectorMeanCurvatureOnEllipsoid: public TensorFunction<1,spacedim>
   private:
     double a,b,c;
     ExactScalarMeanCurvatureOnEllipsoid<spacedim> exact_scalar_H;
-/*}}}*/
 };
 
 template<int spacedim>
 Tensor<1,spacedim> ExactVectorMeanCurvatureOnEllipsoid<spacedim>::value(const Point<spacedim> &p)  const
 {
-  /*{{{*/
   Tensor<1,spacedim> normal,vector_H;
   normal[0] = p(0)/a;
   normal[1] = p(1)/b;
@@ -329,22 +293,14 @@ Tensor<1,spacedim> ExactVectorMeanCurvatureOnEllipsoid<spacedim>::value(const Po
   vector_H *= exact_scalar_H.value(p);
 
   return vector_H;
-  /*}}}*/
 }
 
 
-/*}}}*/
 
-/* ********************************** 
- *
- * DataPostProcessor<spacedim> classes and functions
- *
- * */
-/*{{{*/
+// @sect1{classes derived from <code>DataPostProcessor<spacedim></code> }
 template <int spacedim>
 class VectorValuedSolutionSquared : public DataPostprocessorScalar<spacedim>
 {
-/*{{{*/
 public:
   VectorValuedSolutionSquared (std::string = "dummy");
   virtual
@@ -355,7 +311,6 @@ public:
                                      const std::vector<Point<spacedim> >                   &normals,
                                      const std::vector<Point<spacedim> >                   &evaluation_points,
                                      std::vector<Vector<double> >                          &computed_quantities) const;
-/*}}}*/
 };
 
 template <int spacedim>
@@ -369,7 +324,6 @@ void VectorValuedSolutionSquared<spacedim>::compute_derived_quantities_vector (c
                                                                const std::vector<Point<spacedim> >                     & /*evaluation_points*/,
                                                                std::vector<Vector<double> >                            &computed_quantities) const
 {
-/*{{{*/
   Assert(computed_quantities.size() == uh.size(),
          ExcDimensionMismatch (computed_quantities.size(), uh.size()));
   
@@ -379,13 +333,11 @@ void VectorValuedSolutionSquared<spacedim>::compute_derived_quantities_vector (c
       Assert(uh[i].size() == 3, ExcDimensionMismatch (uh[i].size(), 3));
       computed_quantities[i](0) = uh[i](0)*uh[i](0) + uh[i](1)*uh[i](1) + uh[i](2)*uh[i](2) ;
     }
-/*}}}*/
 }
 
 template <int spacedim>
 class VectorValuedSolutionNormed : public DataPostprocessorScalar<spacedim>
 {
-/*{{{*/
 public:
   VectorValuedSolutionNormed (std::string = "dummy");
   virtual
@@ -396,7 +348,6 @@ public:
                                      const std::vector<Point<spacedim> >                   &normals,
                                      const std::vector<Point<spacedim> >                   &evaluation_points,
                                      std::vector<Vector<double> >                          &computed_quantities) const;
-/*}}}*/
 };
 
 template <int spacedim>
@@ -410,7 +361,6 @@ void VectorValuedSolutionNormed<spacedim>::compute_derived_quantities_vector (co
                                                                const std::vector<Point<spacedim> >                     & /*evaluation_points*/,
                                                                std::vector<Vector<double> >                            &computed_quantities) const
 {
-/*{{{*/
   Assert(computed_quantities.size() == uh.size(),
          ExcDimensionMismatch (computed_quantities.size(), uh.size()));
   
@@ -420,23 +370,16 @@ void VectorValuedSolutionNormed<spacedim>::compute_derived_quantities_vector (co
       Assert(uh[i].size() == 3, ExcDimensionMismatch (uh[i].size(), 3));
       computed_quantities[i](0) = sqrt(uh[i](0)*uh[i](0) + uh[i](1)*uh[i](1) + uh[i](2)*uh[i](2)) ;
     }
-/*}}}*/
 }
 
 
 
-/*}}}*/
 
 
-/* ********************************** 
- *
- * MeanCurvatureFromPosition<spacedim> functions
- *
- * */
-/*{{{*/
+// @sect1{Implementation of the MeanCurvature<spacedim> class} 
 
 template <int spacedim>
-MeanCurvatureFromPosition<spacedim>::MeanCurvatureFromPosition ()
+MeanCurvature<spacedim>::MeanCurvature ()
   :
   vector_fe(FE_Q<dim,spacedim>(vector_fe_degree),spacedim),
   vector_dof_handler(triangulation),
@@ -445,10 +388,10 @@ MeanCurvatureFromPosition<spacedim>::MeanCurvatureFromPosition ()
   {}
 
 
+// @sect2{MeanCurvature<spacedim>::compute_surface_area} 
 template <int spacedim>
-double MeanCurvatureFromPosition<spacedim>::compute_surface_area ()
+double MeanCurvature<spacedim>::compute_surface_area ()
 {
-  /*{{{*/
   const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   
   const QGauss<dim> quadrature_formula (2*vector_fe.degree);
@@ -473,13 +416,12 @@ double MeanCurvatureFromPosition<spacedim>::compute_surface_area ()
       surface_area += fe_values.JxW(q_point);
   }
   return surface_area;
-  /*}}}*/
 }
 
+// @sect2{MeanCurvature<spacedim>::compute_volume} 
 template<int spacedim>
-double MeanCurvatureFromPosition<spacedim>::compute_volume ()
+double MeanCurvature<spacedim>::compute_volume ()
 {
-  /*{{{*/
   const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   
   const QGauss<dim> quadrature_formula (2*vector_fe.degree);
@@ -504,26 +446,24 @@ double MeanCurvatureFromPosition<spacedim>::compute_volume ()
       volume -= fe_values.quadrature_point(q_point)*fe_values.normal_vector(q_point)*fe_values.JxW(q_point);
   }
   return (1.0/3.0)*volume;  
-  /*}}}*/
 }
 
+// @sect2{MeanCurvature<spacedim>::make_grid_and_global_refine}  
 template <int spacedim>
-void MeanCurvatureFromPosition<spacedim>::make_grid_and_global_refine (const unsigned int initial_global_refinement)
+void MeanCurvature<spacedim>::make_grid_and_global_refine (const unsigned int initial_global_refinement)
 {
-  /*{{{*/
   /*  --- build geometry --- */
   GridGenerator::hyper_sphere(triangulation,Point<spacedim>(0,0,0),1.0);
 
   triangulation.set_all_manifold_ids(0);
   
   triangulation.refine_global(initial_global_refinement);
-  /*}}}*/
 }
 
+// @sect2{MeanCurvature<spacedim>::setup_dofs}  
 template <int spacedim>
-void MeanCurvatureFromPosition<spacedim>::setup_dofs ()
+void MeanCurvature<spacedim>::setup_dofs ()
 {
-  /*{{{*/                     
   
   vector_dof_handler.distribute_dofs (vector_fe);
   scalar_dof_handler.distribute_dofs (scalar_fe);
@@ -548,13 +488,13 @@ void MeanCurvatureFromPosition<spacedim>::setup_dofs ()
   scalar_system_rhs.reinit (scalar_dofs);
   
   /*---- initialize solution and auxillary vectors with correct number of dofs ------*/
-  euler_vector.reinit   (vector_dofs);
-  vector_H.reinit       (vector_dofs);
-  exact_vector_H.reinit (vector_dofs);
-  diff_vector_H.reinit  (vector_dofs);
-  scalar_H.reinit       (scalar_dofs);
-  exact_scalar_H.reinit (scalar_dofs);
-  diff_scalar_H.reinit  (scalar_dofs);
+  euler_vector.reinit                   (vector_dofs);
+  vector_H.reinit                       (vector_dofs);
+  exact_vector_H.reinit                 (vector_dofs);
+  exact_minus_computed_vector_H.reinit  (vector_dofs);
+  scalar_H.reinit                       (scalar_dofs);
+  exact_scalar_H.reinit                 (scalar_dofs);
+  exact_minus_computed_scalar_H.reinit  (scalar_dofs);
   /*----------------------------------*/
   
   std::cout << "\nin setup_dofs(), Total number of degrees of freedom: "
@@ -562,27 +502,25 @@ void MeanCurvatureFromPosition<spacedim>::setup_dofs ()
             << "\n( = dofs for vector equation vector elements + dofs for dynamic parameters scalar elements )"
             << "\n( = " << vector_dofs << " + " << scalar_dofs <<" )"
             << std::endl;
-  /*}}}*/
 }
 
   
+// @sect2{MeanCurvature<spacedim>::initialize_geometry}  
 template <int spacedim>
-void MeanCurvatureFromPosition<spacedim>::initialize_geometry (const double &a, 
+void MeanCurvature<spacedim>::initialize_geometry (const double &a, 
                                                                const double &b, 
                                                                const double &c)
 {
-/*{{{*/
 /* interpolate the map from triangulation to desired geometry for the first time */
   VectorTools::interpolate(vector_dof_handler, 
                            MapToEllipsoid<spacedim>(a,b,c),
                            euler_vector);
-/*}}}*/
 }
 
+// @sect2{MeanCurvature<spacedim>::assemble_system}  
 template <int spacedim>
-void MeanCurvatureFromPosition<spacedim>::assemble_system ()
+void MeanCurvature<spacedim>::assemble_system ()
 {
-/*{{{*/
   
   /*
    *    vector_H = -laplace_beltrami identity, 
@@ -654,12 +592,12 @@ void MeanCurvatureFromPosition<spacedim>::assemble_system ()
                                   local_M(i,j));
     }
   }
-  /*}}}*/
 }
 
 
+// @sect2{MeanCurvature<spacedim>::compute_vector_H}  
 template <int spacedim>
-void MeanCurvatureFromPosition<spacedim>::compute_vector_H()
+void MeanCurvature<spacedim>::compute_vector_H()
 {
   /* compute vector mean curvature  */  
   assemble_system();
@@ -668,10 +606,10 @@ void MeanCurvatureFromPosition<spacedim>::compute_vector_H()
   M.vmult(vector_H, vector_system_rhs);   
 }
 
+// @sect2{MeanCurvature<spacedim>::compute_exact_vector_H}  
 template <int spacedim>
-void MeanCurvatureFromPosition<spacedim>::compute_exact_vector_H(const double &a, const double &b, const double &c) 
+void MeanCurvature<spacedim>::compute_exact_vector_H(const double &a, const double &b, const double &c) 
 {
-  /*{{{*/
   ExactVectorMeanCurvatureOnEllipsoid<spacedim> tensor_H(a,b,c);
   const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   VectorTools::interpolate(mapping,vector_dof_handler, 
@@ -680,31 +618,29 @@ void MeanCurvatureFromPosition<spacedim>::compute_exact_vector_H(const double &a
   
   if (verbose)
     std::cout << "exact scalar mean curvature computed" << std::endl;
-  /*}}}*/
 }
 
+// @sect2{MeanCurvature<spacedim>::compute_vector_error}  
 template <int spacedim>
-void MeanCurvatureFromPosition<spacedim>::compute_vector_error(const double &a, const double &b, const double &c) 
+void MeanCurvature<spacedim>::compute_vector_error(const double &a, const double &b, const double &c) 
 {
-  /*{{{*/
   ExactVectorMeanCurvatureOnEllipsoid<spacedim> tensor_H(a,b,c);
   const QGauss<dim> quadrature_formula (2*vector_fe.degree);
   const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   VectorTools::integrate_difference (mapping, vector_dof_handler, 
-                                     vector_H, 
-                                     VectorFunctionFromTensorFunction<spacedim>(tensor_H,0,spacedim), 
-                                     diff_vector_H,
-                                     quadrature_formula, VectorTools::L2_norm);
-  double err_vector_H = diff_vector_H.l2_norm();
+                                                     vector_H, 
+                                                     VectorFunctionFromTensorFunction<spacedim>(tensor_H,0,spacedim), 
+                                                     exact_minus_computed_vector_H,
+                                                     quadrature_formula, VectorTools::L2_norm);
+  double err_vector_H = exact_minus_computed_vector_H.l2_norm();
   if (verbose)
     printf("error in vector_H: %0.2e\n", err_vector_H);
-  /*}}}*/
 }
 
+// @sect2{MeanCurvature<spacedim>::compute_scalar_H}  
 template <int spacedim>
-void MeanCurvatureFromPosition<spacedim>::compute_scalar_H() 
+void MeanCurvature<spacedim>::compute_scalar_H() 
 {
-/*{{{*/
   /*
    *    scalar H from vector Hn
    *
@@ -801,13 +737,12 @@ void MeanCurvatureFromPosition<spacedim>::compute_scalar_H()
   
   if (verbose)
     std::cout << "scalar mean curvature computed" << std::endl;
-/*}}}*/
 }
 
+// @sect2{MeanCurvature<spacedim>::compute_exact_scalar_H}  
 template <int spacedim>
-void MeanCurvatureFromPosition<spacedim>::compute_exact_scalar_H(const double &a, const double &b, const double &c) 
+void MeanCurvature<spacedim>::compute_exact_scalar_H(const double &a, const double &b, const double &c) 
 {
-  /*{{{*/
   const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   VectorTools::interpolate(mapping,scalar_dof_handler, 
                            ExactScalarMeanCurvatureOnEllipsoid<spacedim>(a,b,c),
@@ -815,27 +750,26 @@ void MeanCurvatureFromPosition<spacedim>::compute_exact_scalar_H(const double &a
   
   if (verbose)
     std::cout << "exact scalar mean curvature computed" << std::endl;
-  /*}}}*/
 }
 
+// @sect2{MeanCurvature<spacedim>::compute_scalar_error}  
 template <int spacedim>
-void MeanCurvatureFromPosition<spacedim>::compute_scalar_error(const double &a, const double &b, const double &c) 
+void MeanCurvature<spacedim>::compute_scalar_error(const double &a, const double &b, const double &c) 
 {
-  /*{{{*/
   const QGauss<dim> quadrature_formula (2*scalar_fe.degree);
   const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   VectorTools::integrate_difference (mapping, scalar_dof_handler, 
-                                     scalar_H, ExactScalarMeanCurvatureOnEllipsoid<spacedim>(a,b,c), diff_scalar_H,
-                                     quadrature_formula, VectorTools::L2_norm);
-  double err_scalar_H = diff_scalar_H.l2_norm();
+                                                     scalar_H, ExactScalarMeanCurvatureOnEllipsoid<spacedim>(a,b,c), 
+                                                     exact_minus_computed_scalar_H,
+                                                     quadrature_formula, VectorTools::L2_norm);
+  double err_scalar_H = exact_minus_computed_scalar_H.l2_norm();
   printf("error in scalar_H: %0.2e\n",err_scalar_H);
-  /*}}}*/
 }
 
+// @sect2{MeanCurvature<spacedim>::output_results}  
 template <int spacedim>
-void MeanCurvatureFromPosition<spacedim>::output_results () 
+void MeanCurvature<spacedim>::output_results () 
 {
-  /*{{{*/
   
 
   VectorValuedSolutionSquared<spacedim> computed_mean_curvature_squared("H2");
@@ -846,9 +780,9 @@ void MeanCurvatureFromPosition<spacedim>::output_results ()
   data_out.add_data_vector (scalar_dof_handler, scalar_H, "scalar_H");
   data_out.add_data_vector (scalar_dof_handler, exact_scalar_H, "exact_scalar_H");
   
-  diff_scalar_H = exact_scalar_H;
-  diff_scalar_H -= scalar_H;
-  data_out.add_data_vector (scalar_dof_handler, diff_scalar_H, "diff_scalar_H");
+  exact_minus_computed_scalar_H  = exact_scalar_H;
+  exact_minus_computed_scalar_H -= scalar_H;
+  data_out.add_data_vector (scalar_dof_handler, exact_minus_computed_scalar_H, "exact_minus_computed_scalar_H");
   
   std::vector<DataComponentInterpretation::DataComponentInterpretation> 
       euler_vector_ci(spacedim, DataComponentInterpretation::component_is_part_of_vector);
@@ -865,24 +799,22 @@ void MeanCurvatureFromPosition<spacedim>::output_results ()
   /* use the mapping if you don't want to deform your solution by euler_vector
    * in order to visualize the result */
   
-  //const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
-  //data_out.build_patches (mapping,mapping_degree);
-  data_out.build_patches ();
+  const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
+  data_out.build_patches (mapping,mapping_degree);
+  //data_out.build_patches ();
 
   char filename[80];
-  sprintf(filename,"./data/vector_mean_curvature.vtk");
+  sprintf(filename,"vector_mean_curvature.vtk");
   std::ofstream output (filename);
   data_out.write_vtk (output);
   std::cout << "data written to " << filename << std::endl;
-  /*}}}*/
 }
 
-/*}}}*/
 
+// @sect2{MeanCurvature<spacedim>::run}  
 template <int spacedim>
-void MeanCurvatureFromPosition<spacedim>::run ()
+void MeanCurvature<spacedim>::run ()
 {
-  /*{{{*/
   verbose = true;
   
   /* geometric parameters */
@@ -916,22 +848,21 @@ void MeanCurvatureFromPosition<spacedim>::run ()
   
   output_results ();
 
-  /*}}}*/
 }
 
 } // end of namespace VectorMeanCurvature 
 
 
+// @sect2{The main() function}
 int main ()
 {
-  /*{{{*/
   try
   {
     using namespace dealii;
     using namespace VectorMeanCurvature;
     
     const unsigned int spacedim = 3;
-    MeanCurvatureFromPosition<spacedim> vector_mean_curvature_on_surface;
+    MeanCurvature<spacedim> vector_mean_curvature_on_surface;
     vector_mean_curvature_on_surface.run();
     
     return 0;
@@ -954,7 +885,6 @@ int main ()
       std::cout << "problem! " << std::endl;
       return 2;
   }
-  /*}}}*/
 }
 
 
