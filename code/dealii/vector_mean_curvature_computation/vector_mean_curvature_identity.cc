@@ -55,16 +55,17 @@ template <int spacedim>
 class MeanCurvature
 {
   public:
-    MeanCurvature () ;
+    MeanCurvature (const Tensor<1,spacedim> &half_axes) ;
     void run ();
   
   private:
     static const unsigned int dim = spacedim-1;
+    Tensor<1,spacedim> half_axes;
     bool verbose = false;                       // print short output statements
   
     void make_grid_and_global_refine (const unsigned int global_refinements);
     void setup_dofs ();
-    void initialize_geometry (const double &a,const double &b,const double &c);
+    void initialize_geometry ();
     
     double compute_surface_area();
     double compute_volume();
@@ -72,11 +73,11 @@ class MeanCurvature
     void assemble_system ();
     void solve_using_umfpack(); 
     void compute_vector_H ();
-    void compute_exact_vector_H (const double &a, const double &b, const double &c);
-    void compute_vector_error (const double &a, const double &b, const double &c); 
+    void compute_exact_vector_H ();
+    void compute_vector_error (); 
     void compute_scalar_H (); 
-    void compute_exact_scalar_H (const double &a, const double &b, const double &c); 
-    void compute_scalar_error (const double &a, const double &b, const double &c); 
+    void compute_exact_scalar_H (); 
+    void compute_scalar_error (); 
     
     
     void output_results ();
@@ -84,10 +85,10 @@ class MeanCurvature
 
     Triangulation<dim,spacedim> triangulation;
     Vector<double>              euler_vector;          // defines geometry through MappingQEulerian
-    const unsigned int          mapping_degree = 1;
+    const unsigned int          mapping_degree = 2;
     
     /* - data structures for vector mean curvature - */
-    const unsigned int          vector_fe_degree = 1;
+    const unsigned int          vector_fe_degree = 2;
     FESystem<dim,spacedim>      vector_fe; 
     DoFHandler<dim,spacedim>    vector_dof_handler;
     
@@ -99,7 +100,7 @@ class MeanCurvature
     Vector<double>              exact_vector_H;    // exact solution for vector mean curvature
     
     /* - data structures for scalar parameters - */
-    const unsigned int          scalar_fe_degree = 1;
+    const unsigned int          scalar_fe_degree = 2;
     FE_Q<dim,spacedim>          scalar_fe; 
     DoFHandler<dim,spacedim>    scalar_dof_handler;
     
@@ -197,14 +198,14 @@ template <int spacedim>
 class MapToEllipsoid: public Function<spacedim>
 {
   public:
-    MapToEllipsoid(double a, double b, double c) : Function<spacedim>(3), abc_coeffs{a,b,c}  {}
+    MapToEllipsoid(const Tensor<1,spacedim> half_axes) : Function<spacedim>(3), half_axes(half_axes)  {}
     
     virtual void vector_value_list (const std::vector<Point<spacedim> > &points,
                                     std::vector<Vector<double> >   &value_list) const;
     virtual void vector_value (const Point<spacedim> &p, Vector<double> &value) const;
     virtual double value (const Point<spacedim> &p, const unsigned int component = 0) const;
   private:
-    double abc_coeffs[3];
+    Tensor<1,spacedim> half_axes;
 };
 
 template<int spacedim>
@@ -212,7 +213,7 @@ double MapToEllipsoid<spacedim>::value(const Point<spacedim> &p, const unsigned 
 {
   
   double norm_p = p.distance(Point<spacedim>(0,0,0));
-  return abc_coeffs[component]*p(component)/norm_p - p(component);   
+  return half_axes[component]*p(component)/norm_p - p(component);   
 
 }
 
@@ -240,18 +241,21 @@ template <int spacedim>
 class ExactScalarMeanCurvatureOnEllipsoid: public Function<spacedim>
 {
   public:
-    ExactScalarMeanCurvatureOnEllipsoid (double a, double b, double c) : Function<spacedim>(1), a(a), b(b), c(c), abc_coeffs{a,b,c}, spherical_manifold(Point<spacedim>(0,0,0))  {}
+    ExactScalarMeanCurvatureOnEllipsoid (const Tensor<1,spacedim> &half_axes) : Function<spacedim>(1), half_axes(half_axes), spherical_manifold(Point<spacedim>(0,0,0))  {}
     
     virtual double value (const Point<spacedim> &p, const unsigned int component = 0) const;
   private:
-    double a,b,c;
-    double abc_coeffs[3];
+    Tensor<1,spacedim> half_axes;
     SphericalManifold<2,spacedim> spherical_manifold;
 };
 
 template<int spacedim>
 double ExactScalarMeanCurvatureOnEllipsoid<spacedim>::value(const Point<spacedim> &p, const unsigned int )  const
 {
+  double a,b,c; 
+  a = half_axes[0];
+  b = half_axes[1];
+  c = half_axes[2];
   Point<spacedim> unmapped_p(p(0)/a, p(1)/b,  p(2)/c);
 
   Point<spacedim> chart_point = spherical_manifold.pull_back(unmapped_p);
@@ -272,11 +276,11 @@ template <int spacedim>
 class ExactVectorMeanCurvatureOnEllipsoid: public TensorFunction<1,spacedim>
 {
   public:
-    ExactVectorMeanCurvatureOnEllipsoid (double a, double b, double c) : TensorFunction<1,spacedim>(), a(a), b(b), c(c), exact_scalar_H(a,b,c) {}
+    ExactVectorMeanCurvatureOnEllipsoid (const Tensor<1,spacedim> &half_axes) : TensorFunction<1,spacedim>(), half_axes(half_axes), exact_scalar_H(half_axes) {}
     
     virtual Tensor<1,spacedim> value (const Point<spacedim> &p) const;
   private:
-    double a,b,c;
+    Tensor<1,spacedim> half_axes;
     ExactScalarMeanCurvatureOnEllipsoid<spacedim> exact_scalar_H;
 };
 
@@ -284,9 +288,9 @@ template<int spacedim>
 Tensor<1,spacedim> ExactVectorMeanCurvatureOnEllipsoid<spacedim>::value(const Point<spacedim> &p)  const
 {
   Tensor<1,spacedim> normal,vector_H;
-  normal[0] = p(0)/a;
-  normal[1] = p(1)/b;
-  normal[2] = p(2)/c;
+  normal[0] = p(0)/half_axes[0];
+  normal[1] = p(1)/half_axes[1];
+  normal[2] = p(2)/half_axes[2];
   normal /= normal.norm();
 
   vector_H  = normal;
@@ -379,8 +383,9 @@ void VectorValuedSolutionNormed<spacedim>::compute_derived_quantities_vector (co
 // @sect1{Implementation of the MeanCurvature<spacedim> class} 
 
 template <int spacedim>
-MeanCurvature<spacedim>::MeanCurvature ()
+MeanCurvature<spacedim>::MeanCurvature (const Tensor<1,spacedim> &half_axes)
   :
+  half_axes(half_axes),
   vector_fe(FE_Q<dim,spacedim>(vector_fe_degree),spacedim),
   vector_dof_handler(triangulation),
   scalar_fe(scalar_fe_degree),
@@ -507,13 +512,11 @@ void MeanCurvature<spacedim>::setup_dofs ()
   
 // @sect2{MeanCurvature<spacedim>::initialize_geometry}  
 template <int spacedim>
-void MeanCurvature<spacedim>::initialize_geometry (const double &a, 
-                                                               const double &b, 
-                                                               const double &c)
+void MeanCurvature<spacedim>::initialize_geometry ()
 {
 /* interpolate the map from triangulation to desired geometry for the first time */
   VectorTools::interpolate(vector_dof_handler, 
-                           MapToEllipsoid<spacedim>(a,b,c),
+                           MapToEllipsoid<spacedim>(half_axes),
                            euler_vector);
 }
 
@@ -608,9 +611,9 @@ void MeanCurvature<spacedim>::compute_vector_H()
 
 // @sect2{MeanCurvature<spacedim>::compute_exact_vector_H}  
 template <int spacedim>
-void MeanCurvature<spacedim>::compute_exact_vector_H(const double &a, const double &b, const double &c) 
+void MeanCurvature<spacedim>::compute_exact_vector_H() 
 {
-  ExactVectorMeanCurvatureOnEllipsoid<spacedim> tensor_H(a,b,c);
+  ExactVectorMeanCurvatureOnEllipsoid<spacedim> tensor_H(half_axes);
   const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   VectorTools::interpolate(mapping,vector_dof_handler, 
                            VectorFunctionFromTensorFunction<spacedim>(tensor_H,0,spacedim),
@@ -622,9 +625,9 @@ void MeanCurvature<spacedim>::compute_exact_vector_H(const double &a, const doub
 
 // @sect2{MeanCurvature<spacedim>::compute_vector_error}  
 template <int spacedim>
-void MeanCurvature<spacedim>::compute_vector_error(const double &a, const double &b, const double &c) 
+void MeanCurvature<spacedim>::compute_vector_error() 
 {
-  ExactVectorMeanCurvatureOnEllipsoid<spacedim> tensor_H(a,b,c);
+  ExactVectorMeanCurvatureOnEllipsoid<spacedim> tensor_H (half_axes);
   const QGauss<dim> quadrature_formula (2*vector_fe.degree);
   const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   VectorTools::integrate_difference (mapping, vector_dof_handler, 
@@ -741,11 +744,11 @@ void MeanCurvature<spacedim>::compute_scalar_H()
 
 // @sect2{MeanCurvature<spacedim>::compute_exact_scalar_H}  
 template <int spacedim>
-void MeanCurvature<spacedim>::compute_exact_scalar_H(const double &a, const double &b, const double &c) 
+void MeanCurvature<spacedim>::compute_exact_scalar_H() 
 {
   const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   VectorTools::interpolate(mapping,scalar_dof_handler, 
-                           ExactScalarMeanCurvatureOnEllipsoid<spacedim>(a,b,c),
+                           ExactScalarMeanCurvatureOnEllipsoid<spacedim>(half_axes),
                            exact_scalar_H);
   
   if (verbose)
@@ -754,12 +757,12 @@ void MeanCurvature<spacedim>::compute_exact_scalar_H(const double &a, const doub
 
 // @sect2{MeanCurvature<spacedim>::compute_scalar_error}  
 template <int spacedim>
-void MeanCurvature<spacedim>::compute_scalar_error(const double &a, const double &b, const double &c) 
+void MeanCurvature<spacedim>::compute_scalar_error() 
 {
   const QGauss<dim> quadrature_formula (2*scalar_fe.degree);
   const MappingQEulerian<dim,Vector<double>,spacedim> mapping(mapping_degree, vector_dof_handler, euler_vector);
   VectorTools::integrate_difference (mapping, scalar_dof_handler, 
-                                                     scalar_H, ExactScalarMeanCurvatureOnEllipsoid<spacedim>(a,b,c), 
+                                                     scalar_H, ExactScalarMeanCurvatureOnEllipsoid<spacedim>(half_axes), 
                                                      exact_minus_computed_scalar_H,
                                                      quadrature_formula, VectorTools::L2_norm);
   double err_scalar_H = exact_minus_computed_scalar_H.l2_norm();
@@ -818,16 +821,11 @@ void MeanCurvature<spacedim>::run ()
   verbose = true;
   
   /* geometric parameters */
-  double a,b,c;
-  a = 1;
-  b = 2;
-  c = 3;
-  
-  const int global_refinements = 5;
+  const int global_refinements = 4;
   
   make_grid_and_global_refine (global_refinements);
   setup_dofs();
-  initialize_geometry (a,b,c);
+  initialize_geometry ();
   assemble_system();
   
   double computed_surface_area = compute_surface_area();
@@ -839,12 +837,12 @@ void MeanCurvature<spacedim>::run ()
   std::cout << "--------------------------------------" << std::endl;
   
   compute_vector_H ();
-  compute_exact_vector_H(a,b,c);
-  compute_vector_error (a,b,c);
+  compute_exact_vector_H();
+  compute_vector_error ();
   
   compute_scalar_H ();
-  compute_exact_scalar_H (a,b,c);
-  compute_scalar_error (a,b,c);
+  compute_exact_scalar_H ();
+  compute_scalar_error ();
   
   output_results ();
 
@@ -862,7 +860,12 @@ int main ()
     using namespace VectorMeanCurvature;
     
     const unsigned int spacedim = 3;
-    MeanCurvature<spacedim> vector_mean_curvature_on_surface;
+    double a,b,c; // x,y,z half axes of ellipse
+    a = 1;
+    b = 1;
+    c = 1;
+    Tensor<1,spacedim> half_axes({a,b,c});
+    MeanCurvature<spacedim> vector_mean_curvature_on_surface(half_axes);
     vector_mean_curvature_on_surface.run();
     
     return 0;
