@@ -3,7 +3,8 @@
 ##
 
 # Set the name of the project and target:
-SET(TARGET "sphere_to_ellipsoid")
+SET(TARGET "surface_of_rotation")
+#SET(TARGET "sphere_to_ellipsoid")
 
 # Declare all source files the target consists of. Here, this is only
 # the one step-X.cc file, but as you expand your project you may wish

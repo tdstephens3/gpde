@@ -12,12 +12,12 @@
 %
 %\pdfpagewidth 8.5in
 %\pdfpageheight 11in
+\usepackage{parskip}
 %
 \newcommand{\R}{\mathbb{R}}
-%\newcommand{\mbf}[1]{\mathbf{#1}}
 \newcommand{\mbf}[1]{\boldsymbol{#1}}
 
-\title{Computing vector curvature and total curvature on a triangulated surface}
+\title{Computing vector curvature and total curvature on a parametric surface}
 \author{a  \texttt{deal.ii} implementation}
 
 \date{ }
@@ -33,7 +33,7 @@
 In this example we show how to compute the vector curvature (sometimes called
 \emph{normal curvature}) $\mbf{h}$ on a parametric surface $S$ in $\R^3$.
 We include a function to extract the (scalar) total curvature $h$ (sometimes
-called \emph{mean curvature}), and finally we test our computations against the
+called \emph{mean curvature}), and finally we test our computations against an
 analytic expression for total curvature on ellipsoids.  
 
 We follow the notation of **step 38** and introduce the codimension 1 surface
@@ -42,15 +42,17 @@ $\hat{S} \subset \R^2$, and $\mbf{x}_S$ takes points $\hat{\mbf{x}} =
 (\hat{x}_1, \hat{x}_2) \in \hat{S}$ to $S$.  In what follows we will continue
 to use the cumbersome notation $\mbf{x}_S$ to denote points in $\R^3$ that lie
 on $S$, and $\mbf{x}$ to denote arbitrary points in $\R^3$.  The purpose of
-this is to emphasize \dots 
+keeping the subscript $S$ will be to emphasize the domain of functions that are only defined on the surface
+$S$ from ones which are defined on a neighborhood $\mathcal{N}_S \subset \R^3$ of
+the surface.
 
 The total curvature $h$ on $S$ is defined at every point
 $\mbf{x}_S \in S$ and can be described as the sum of the principle curvatures
-$\kappa_1(\mbf{x}_S) + \kappa_2(\mbf{x}_S)$ of $S$, hence 
+$\kappa_1(\mbf{x}_S)$ and $\kappa_2(\mbf{x}_S)$ of $S$, hence 
 \[h(\mbf{x}_S) =  \kappa_1(\mbf{x}_S) + \kappa_2(\mbf{x}_S).\]
 Another way to think about the total curvature in a geometric sense is as the
 tangential divergence of the normal vector, that is $h = \text{div}_{S}
-\mbf{n} \overset{\text{id}}{=} \nabla_S \cdot \mbf{n}$  (this will appear again below).
+\mbf{n} \overset{\text{def}}{=} \nabla_S \cdot \mbf{n}$  (this will appear again below).
 
 The vector curvature $\mbf{h}$ on $S$ is simply defined as the (scalar) total
 curvature times the normal vector, hence \[\mbf{h}(\mbf{x}_S) =
@@ -116,7 +118,7 @@ $D^2 \text{id}_i$ is the zero matrix for $i=1,2,3$, leaving us with
 
 Presumably the purpose of computing curvature on a surface is to then use it in
 further computations.  This means that we should make sure the data structure that holds
-curvature information is be compatible with further finite element comptuations
+curvature information is compatible with further finite element comptuations
 in \texttt{deal.ii}.  All this is to say that we will use \texttt{deali.ii} to
 `solve' $- \Delta_S \, \text{\bf id}_S = \mbf{h}$ for $\mbf{h}$ (more
 precisely, we will weakly enforce the identity $\nabla_S \boldsymbol{\varphi}
@@ -131,30 +133,53 @@ allows us to use higher-order finite elements because we can specify $S$ at
 representation of $\text{\bf id}_S$ and thereby enhancing the accuracy of our
 approximation of $\mbf{h}$. 
 
-As noted in **step-38**, the user will not be expressing derivatives back in
-$\hat{S}$.  Rather, the user will specify a \texttt{Mapping} on a
+As noted in **step-38**, in our code we will not be expressing derivatives back in
+$\hat{S}$.  Rather, we will specify a \texttt{Mapping} on a
 \texttt{Triangulation} (or specifying just a \texttt{Triangulation}, and
 letting \texttt{deal.ii} associate a default piecewise-linear \texttt{Mapping}
-on that \texttt{Triangulation})
+on that \texttt{Triangulation}), and pass that \texttt{Mapping} to the shape
+functions (\texttt{fe\_values(mapping, ...)}).  Once this is done we can simply
+ask for derivatives of the mapped shape functions, and \texttt{deal.ii} handles
+the chain rule required due to the composition of the shape function with the
+mapping from $\hat{S}$ to $S$.
 
 
 \section*{Test Case}
 
-Ellipsoid parameterized, $\hat{S} = [0,2\pi] \times [0, \pi]$ by 
-\[  \mbf{x}(\hat{x}_1, \hat{x}_2) = 
+Put $\hat{S} = [0,2\pi] \times [0, \pi]$, and take $\hat{x_1}, \hat{x_2} \in
+\hat{S}$.  Then a parameterization of an ellipsoid $S$ is given by
+\[  \mbf{x}_{S}(\hat{x}_1, \hat{x}_2) = 
    \left( \begin{array}{c} 
       a\sin \hat{x}_1 \cos \hat{x}_2 \\
       b\sin \hat{x}_1 \sin \hat{x}_2 \\
             c\cos\hat{x}_1 
-   \end{array} \right)
+   \end{array} \right).
 \]
-has total (scalar) curvature 
+
+The ellipsoid above has total (scalar) curvature 
 \begin{align*}
    h(\hat{x}_1, \hat{x}_2) &= \frac{2abc\left[ 3(a^2 + b^2) + 2c^2 + (a^2 + b^2 -
    2c^2)\cos(2\hat{x}_1) - 2(a^2 - b^2)\cos(2\hat{x}_2)\sin^2 \hat{x}_1 \right]}
                            {  8\left[a^2 b^2 \cos^2 \hat{x}_1 + c^2(b^2\cos^2 \hat{x}_2 +
-                           a^2\sin^2 \hat{x}_2 ) \sin^2 \hat{x}_1 \right]^{3/2}}
+                           a^2\sin^2 \hat{x}_2 ) \sin^2 \hat{x}_1
+                        \right]^{3/2}}.
 \end{align*}
+
+Our goal is to represent the ellipsoid $S$ through a finite collection of
+vector-valued shape functions $\boldsymbol{\varphi}$,  and then recover $h$
+from the identity $\nabla_S \boldsymbol{\varphi} \nabla_S \text{\bf id}
+\overset{\text{id}}{=} \mbf{\varphi}\mbf{h}$.  This will set up a good
+comparison between our computed value for $h$ and the actual value of $h$. 
+
+
+\section*{Implementation}
+
+We don't reimplement the parameterization from $\hat{S}$ to $\R^3$ here -- instead we
+use the built-in \texttt{SphericalManfold<dim,spacedim> sphere} and rescale
+\texttt{sphere} in $\R^3$.  The
+\texttt{pull\_back} and \texttt{push\_forward} functions allow us to write our
+functions in terms of $\mbf{x} \in \R^3$ rather than $\hat{\mbf{x}} \in \hat{S}
+\subset \R^2$. 
 
 \begin{verbatim}
 template<int spacedim>
@@ -170,13 +195,6 @@ double ExactScalarMeanCurvatureOnEllipsoid<spacedim>::value(const Point<spacedim
 }
 \end{verbatim}
 
-
-We don't reimplement the parameterization from $\hat{S}$ to $\R^3$ here -- instead we
-use the built-in \texttt{SphericalManfold<dim,spacedim> sphere} and rescale
-\texttt{sphere} in $\R^3$.  The
-\texttt{pull\_back} and \texttt{push\_forward} functions allow us to write our
-functions in terms of $\mbf{x} \in \R^3$ rather than $\hat{\mbf{x}} \in \hat{S}
-\subset \R^2$. 
 
 \begin{verbatim}
 template<int spacedim>
@@ -195,8 +213,16 @@ Tensor<1,spacedim> ExactVectorMeanCurvatureOnEllipsoid<spacedim>::value(const Po
 }
 \end{verbatim}
 
-\section*{Implementation}
 
+\section*{Commented Program}
+
+\section*{Results}
+
+\section*{Extensions}
+We could just read in a quadralateral mesh representing a closed, codimension 1
+manifold in some \texttt{deal.ii}-readable format using the
+\texttt{GridIn::read\_mesh()} function, and then let \texttt{deal.ii} assign
+the default piecewise-linear \texttt{Mapping} object to the shape functions.  
 
 
 \end{document}
